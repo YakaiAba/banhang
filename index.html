@@ -7,7 +7,6 @@
 <meta name="apple-mobile-web-app-title" content="Bán hàng">
 <meta name="theme-color" content="#f26a1b">
 <title>Bán hàng</title>
-<script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
 <style>
 *{box-sizing:border-box}
 body{margin:0;font-family:-apple-system,system-ui,sans-serif;background:#f4f4f6;color:#222;padding-bottom:70px}
@@ -33,7 +32,10 @@ button.danger{color:#c62828;border-color:#e0a0a0}
 .qty button{padding:4px 10px}
 .overlay{position:fixed;inset:0;background:#000;z-index:20;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px}
 .overlay.hide{display:none}
-video{width:100%;max-height:70vh;background:#000}
+.camwrap{position:relative;width:100%;max-width:480px}
+video{width:100%;max-height:60vh;background:#000;display:block;object-fit:cover}
+.aim{position:absolute;left:10%;right:10%;top:30%;bottom:30%;border:3px solid #f26a1b;border-radius:10px;box-shadow:0 0 0 2000px rgba(0,0,0,.35);pointer-events:none}
+.aim.ok{border-color:#2e7d32}
 label{display:block;font-size:14px;margin:8px 0 4px}
 .field{margin-bottom:8px}
 h2{font-size:16px;margin:14px 0 8px}
@@ -137,8 +139,8 @@ h2{font-size:16px;margin:14px 0 8px}
  <button data-t="t-hist">Lịch sử</button>
 </nav>
 <div class="overlay hide" id="scanner">
- <video id="video" playsinline muted></video>
- <p style="color:#fff" id="scanMsg">Giữ điện thoại cách mã khoảng 15–25 cm</p>
+ <div class="camwrap"><video id="video" playsinline muted autoplay></video><div class="aim"></div></div>
+ <p style="color:#fff;text-align:center" id="scanMsg">Đang mở camera…</p>
  <input id="manualCode" inputmode="numeric" placeholder="Hoặc gõ số mã vạch" style="width:300px;margin-bottom:8px">
  <button class="primary" id="manualOk" style="width:300px;margin-bottom:8px">Dùng mã này</button>
  <button id="stop">Đóng</button>
@@ -357,24 +359,107 @@ $('psave').onclick=()=>{
   save();resetPForm();renderProducts();renderPick();
 };
 
-// Quét mã vạch bằng camera
-let reader=null,scanMode='';
-function startScan(mode){
-  scanMode=mode;
-  $('scanner').classList.remove('hide');
+// Quét mã vạch bằng camera (bộ đọc ZXing-WASM, dự phòng ZXing JS)
+let scanMode='',scanStream=null,scanTimer=null,scanBusy=false,detector=null,lastHit='',hitCount=0;
+const FORMATS=['ean_13','ean_8','upc_a','upc_e','code_128','code_39','qr_code'];
+const scanCanvas=document.createElement('canvas');
+const scanCtx=scanCanvas.getContext('2d',{willReadFrequently:true});
+function scanMsg(t){$('scanMsg').textContent=t;}
+function loadScript(src){return new Promise((ok,no)=>{const s=document.createElement('script');s.src=src;s.onload=ok;s.onerror=no;document.head.appendChild(s);});}
+async function getDetector(){
+  if(detector)return detector;
+  // 1) Bộ đọc có sẵn của trình duyệt (Android Chrome)
   try{
-    const hints=new Map();
-    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS,[ZXing.BarcodeFormat.EAN_13,ZXing.BarcodeFormat.EAN_8,ZXing.BarcodeFormat.UPC_A,ZXing.BarcodeFormat.UPC_E,ZXing.BarcodeFormat.CODE_128,ZXing.BarcodeFormat.CODE_39,ZXing.BarcodeFormat.QR_CODE]);
-    hints.set(ZXing.DecodeHintType.TRY_HARDER,true);
-    reader=new ZXing.BrowserMultiFormatReader(hints);
-    const constraints={video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080},focusMode:{ideal:'continuous'}}};
-    reader.decodeFromConstraints(constraints,'video',res=>{
-      if(res){const code=res.getText();stopScan();onCode(code);}
-    }).catch(()=>{alert('Không mở được camera. Kiểm tra quyền camera trong Cài đặt của iPhone.');stopScan();});
-  }catch(e){alert('Không tải được bộ quét mã. Kiểm tra kết nối mạng.');stopScan();}
+    if('BarcodeDetector' in window){
+      const sup=await window.BarcodeDetector.getSupportedFormats();
+      const f=FORMATS.filter(x=>sup.includes(x));
+      if(f.includes('ean_13')){const d=new window.BarcodeDetector({formats:f});detector={detect:c=>d.detect(c)};return detector;}
+    }
+  }catch(e){}
+  // 2) ZXing-WASM (đọc mã vạch 1D tốt trên iPhone)
+  try{
+    const m=await import('https://cdn.jsdelivr.net/npm/barcode-detector@2/dist/es/pure.min.js');
+    const d=new m.BarcodeDetector({formats:FORMATS});
+    detector={detect:c=>d.detect(c)};return detector;
+  }catch(e){}
+  // 3) Dự phòng: ZXing JS
+  await loadScript('https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js');
+  const hints=new Map();
+  hints.set(ZXing.DecodeHintType.TRY_HARDER,true);
+  const r=new ZXing.MultiFormatReader();r.setHints(hints);
+  detector={detect:async c=>{
+    try{const bmp=new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(new ZXing.HTMLCanvasElementLuminanceSource(c)));return [{rawValue:r.decode(bmp).getText()}];}
+    catch(e){return [];}
+  }};
+  return detector;
+}
+async function startScan(mode){
+  scanMode=mode;lastHit='';hitCount=0;
+  $('scanner').classList.remove('hide');
+  $('scanner').querySelector('.aim').classList.remove('ok');
+  scanMsg('Đang mở camera…');
+  if(!window.isSecureContext||!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){
+    scanMsg('Trình duyệt không cho dùng camera ở trang này. Hãy mở bằng Safari qua đường dẫn https, hoặc gõ số mã vạch bên dưới.');return;
+  }
+  try{
+    scanStream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}}});
+  }catch(e){
+    const n=e&&e.name;
+    scanMsg(n==='NotAllowedError'?'Bạn chưa cho phép camera. Vào Cài đặt > Safari > Camera > Cho phép, rồi mở lại app.'
+      :n==='NotReadableError'?'Camera đang bị app khác dùng. Tắt app đó rồi thử lại.'
+      :n==='NotFoundError'?'Không tìm thấy camera trên máy.'
+      :'Không mở được camera ('+(n||e)+').');
+    return;
+  }
+  if($('scanner').classList.contains('hide')){stopScan();return;} // đã bấm Đóng khi đang mở camera
+  const v=$('video');
+  v.setAttribute('playsinline','');v.muted=true;v.srcObject=scanStream;
+  try{await v.play();}catch(e){}
+  // Thử bật lấy nét liên tục nếu máy hỗ trợ
+  try{const t=scanStream.getVideoTracks()[0];const c=t.getCapabilities&&t.getCapabilities();
+    if(c&&c.focusMode&&c.focusMode.includes('continuous'))await t.applyConstraints({advanced:[{focusMode:'continuous'}]});}catch(e){}
+  scanMsg('Đang tải bộ đọc mã…');
+  try{await getDetector();}catch(e){scanMsg('Không tải được bộ đọc mã. Kiểm tra mạng, hoặc gõ số mã vạch bên dưới.');return;}
+  if(!scanStream)return;
+  scanMsg('Đưa mã vạch vào khung cam, cách 10–20 cm, đủ sáng');
+  scanLoop();
+}
+async function scanLoop(){
+  if(!scanStream)return;
+  const v=$('video');
+  if(!scanBusy&&v.readyState>=2&&v.videoWidth){
+    scanBusy=true;
+    try{
+      // Cắt vùng giữa (khung cam) để đọc nhanh và chính xác hơn
+      const W=v.videoWidth,H=v.videoHeight;
+      const cw=Math.round(W*0.8),ch=Math.round(H*0.5);
+      scanCanvas.width=cw;scanCanvas.height=ch;
+      scanCtx.drawImage(v,(W-cw)/2,(H-ch)/2,cw,ch,0,0,cw,ch);
+      let res=await detector.detect(scanCanvas);
+      if(!res.length){ // thử cả khung hình đầy đủ
+        scanCanvas.width=W;scanCanvas.height=H;scanCtx.drawImage(v,0,0,W,H);
+        res=await detector.detect(scanCanvas);
+      }
+      const code=res.length?String(res[0].rawValue||'').trim():'';
+      if(code){
+        // Mã vạch 1D cần đọc trùng 2 lần liên tiếp để tránh đọc nhầm
+        hitCount=code===lastHit?hitCount+1:1;lastHit=code;
+        const is1D=res[0].format?res[0].format!=='qr_code':/^\d+$/.test(code);
+        if(!is1D||hitCount>=2){
+          $('scanner').querySelector('.aim').classList.add('ok');
+          try{navigator.vibrate&&navigator.vibrate(80);}catch(e){}
+          stopScan();onCode(code);scanBusy=false;return;
+        }
+      }
+    }catch(e){}
+    scanBusy=false;
+  }
+  scanTimer=setTimeout(scanLoop,120);
 }
 function stopScan(){
-  try{reader&&reader.reset();}catch(e){}
+  clearTimeout(scanTimer);scanTimer=null;
+  if(scanStream){scanStream.getTracks().forEach(t=>t.stop());scanStream=null;}
+  const v=$('video');try{v.pause();}catch(e){}v.srcObject=null;
   $('scanner').classList.add('hide');
 }
 $('stop').onclick=stopScan;
@@ -388,7 +473,13 @@ $('manualOk').onclick=()=>{
 $('scanSell').onclick=()=>startScan('sell');
 $('scanProd').onclick=()=>startScan('prod');
 function onCode(code){
-  if(scanMode==='prod'){$('pbar').value=code;return;}
+  if(scanMode==='prod'){
+    const ex=db.products.find(x=>x.barcode===code&&x.id!==$('pid').value);
+    if(ex)alert('Mã '+code+' đã dùng cho sản phẩm "'+ex.name+'".');
+    $('pbar').value=code;
+    if(!$('pname').value)$('pname').focus();
+    return;
+  }
   const p=db.products.find(x=>x.barcode===code);
   if(p){addToCart(p.id);return;}
   if(confirm('Mã '+code+' chưa có sản phẩm. Tạo sản phẩm mới?')){
