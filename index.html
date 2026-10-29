@@ -10,7 +10,9 @@
 <style>
 *{box-sizing:border-box}
 body{margin:0;font-family:-apple-system,system-ui,sans-serif;background:#f4f4f6;color:#222;padding-bottom:70px}
-header{background:#f26a1b;color:#fff;padding:14px 16px;font-size:18px;font-weight:600;position:sticky;top:0;z-index:5}
+header{background:#f26a1b;color:#fff;padding:14px 16px;font-size:18px;font-weight:600;position:sticky;top:0;z-index:5;display:flex;justify-content:space-between;align-items:center}
+.syncdot{font-size:12px;font-weight:500;background:rgba(255,255,255,.2);padding:3px 8px;border-radius:10px}
+.syncdot:empty{display:none}
 main{padding:12px}
 .tab{display:none}.tab.on{display:block}
 nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:#fff;border-top:1px solid #ddd;padding-bottom:env(safe-area-inset-bottom)}
@@ -43,7 +45,7 @@ h2{font-size:16px;margin:14px 0 8px}
 </style>
 </head>
 <body>
-<header>Bán hàng</header>
+<header><span>Bán hàng</span><span id="syncDot" class="syncdot"></span></header>
 <main>
  <section class="tab on" id="t-sell">
   <div class="row"><input id="search" placeholder="Tìm sản phẩm"><button id="scanSell">Quét</button></div>
@@ -126,6 +128,20 @@ h2{font-size:16px;margin:14px 0 8px}
    <button id="bankQRClear" class="danger" style="display:none;margin-top:6px">Xóa ảnh QR</button>
    <button class="primary" id="bankSave" style="margin-top:10px">Lưu tài khoản</button>
   </div>
+  <div class="card" style="margin-top:14px" id="syncCard">
+   <b style="font-size:14px">Đồng bộ Google Sheets</b>
+   <p class="muted" id="syncInfo" style="margin:6px 0"></p>
+   <label>Địa chỉ ứng dụng web (bắt đầu bằng https://script.google.com/)</label>
+   <input id="syncUrl" type="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://script.google.com/macros/s/.../exec">
+   <label>Mã bí mật</label>
+   <input id="syncKey" autocomplete="off" autocapitalize="off" spellcheck="false">
+   <button class="primary" id="syncSave" style="margin-top:10px">Lưu và kiểm tra kết nối</button>
+   <div class="row" style="margin:8px 0 0">
+    <button id="syncNow" style="flex:1">Đồng bộ ngay</button>
+    <button id="syncLoad" style="flex:1">Tải từ Sheets về</button>
+   </div>
+   <button id="syncOff" class="danger" style="width:100%;margin-top:8px">Ngắt kết nối</button>
+  </div>
   <div class="card" style="margin-top:14px">
    <b style="font-size:14px">Sao lưu dữ liệu</b>
    <p class="muted" id="bkInfo" style="margin:6px 0"></p>
@@ -171,7 +187,7 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const numOf=v=>+String(v||'').replace(/\D/g,'')||0;
 const fmtNum=n=>(+n||0).toLocaleString('vi-VN');
 const pct=v=>parseFloat(String(v||'').replace(',','.'))||0;
-const save=()=>localStorage.setItem(KEY,JSON.stringify(db));
+const save=()=>{localStorage.setItem(KEY,JSON.stringify(db));if(typeof markDirty==='function')markDirty();};
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 const dayKey=d=>{const x=new Date(d);return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0');};
 const methodName=m=>m==='cash'?'Tiền mặt':m==='bank'?'Chuyển khoản':'—';
@@ -679,7 +695,115 @@ $('imp').onchange=async e=>{
   finally{e.target.value='';}
 };
 
-renderPick();renderCart();renderProducts();renderHist();loadBankForm();resetExtra();updateHint();renderBackupInfo();
+// ===== Đồng bộ Google Sheets =====
+const SYNC='banhang.sync';
+let cfg={};try{cfg=JSON.parse(localStorage.getItem(SYNC)||'{}');}catch(e){cfg={};}
+let syncing=false,again=false,syncTimer=null;
+const saveCfg=()=>localStorage.setItem(SYNC,JSON.stringify(cfg));
+const hasData=d=>d&&((d.products||[]).length+(d.orders||[]).length)>0;
+function renderSync(){
+  const dot=$('syncDot');
+  if(!cfg.url){dot.textContent='';$('syncInfo').textContent='Chưa kết nối. Dữ liệu chỉ nằm trong máy này.';$('syncInfo').style.color='#c62828';return;}
+  $('syncUrl').value=cfg.url;$('syncKey').value=cfg.key||'';
+  const last=cfg.last?new Date(cfg.last).toLocaleString('vi-VN',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'}):'chưa có';
+  let msg,col='';
+  if(cfg.err==='shrink'){dot.textContent='⚠ Chưa đồng bộ';msg='Trên Sheets đang có nhiều dữ liệu hơn máy này nên app tạm dừng gửi để tránh ghi đè. Bấm "Tải từ Sheets về" để lấy lại, hoặc "Đồng bộ ngay" để ghi đè.';col='#c62828';}
+  else if(cfg.err==='wrong_key'){dot.textContent='⚠ Sai mã';msg='Mã bí mật không khớp với mã trong Apps Script.';col='#c62828';}
+  else if(syncing){dot.textContent='⏳ Đang lưu';msg='Đang gửi lên Sheets…';}
+  else if(cfg.pending){dot.textContent='⏳ Chờ gửi';msg='Có thay đổi chưa gửi'+(cfg.err?' (lỗi: '+cfg.err+')':'')+'. App sẽ tự gửi lại khi có mạng. Lần gửi được gần nhất: '+last+'.';col=cfg.err?'#c62828':'';}
+  else{dot.textContent='☁ Đã lưu';msg='Đã đồng bộ lúc '+last+'.';col='#2e7d32';}
+  $('syncInfo').textContent=msg;$('syncInfo').style.color=col;
+}
+async function api(action,extra={}){
+  const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),30000);
+  try{
+    const r=await fetch(cfg.url,{method:'POST',body:JSON.stringify({key:cfg.key,action,...extra}),signal:ctl.signal});
+    const j=await r.json();
+    return j;
+  }finally{clearTimeout(t);}
+}
+function markDirty(){
+  if(!cfg.url)return;
+  cfg.pending=true;saveCfg();renderSync();
+  clearTimeout(syncTimer);syncTimer=setTimeout(()=>push(false),1500);
+}
+async function push(force){
+  if(!cfg.url||!cfg.key)return false;
+  if(syncing){again=true;return false;}
+  if(cfg.err==='shrink'&&!force)return false;
+  syncing=true;again=false;renderSync();
+  let ok=false;
+  try{
+    const res=await api('save',{data:db,force:!!force});
+    if(res.ok){cfg.pending=false;cfg.err='';cfg.last=new Date().toISOString();ok=true;}
+    else{cfg.err=res.err||'lỗi';if(res.err==='shrink')cfg.info=res.info;}
+  }catch(e){cfg.err=navigator.onLine?'không kết nối được':'mất mạng';}
+  syncing=false;saveCfg();renderSync();
+  if(again&&cfg.pending)push(false);
+  return ok;
+}
+function applyRemote(data){
+  db=data;localStorage.setItem(KEY,JSON.stringify(db));
+  cfg.pending=false;cfg.err='';cfg.last=new Date().toISOString();saveCfg();
+  renderProducts();renderPick();renderHist();loadBankForm();renderBackupInfo();updateHint();renderSync();
+}
+async function offerRestore(silentIfEmpty){
+  try{
+    const res=await api('load');
+    if(!res.ok){cfg.err=res.err;saveCfg();renderSync();if(!silentIfEmpty)alert(res.err==='wrong_key'?'Mã bí mật không đúng.':'Lỗi: '+res.err);return null;}
+    if(!hasData(res.data)){if(!silentIfEmpty)alert('Trên Google Sheets chưa có dữ liệu.');return false;}
+    const i=res.info;
+    if(confirm('Trên Google Sheets có '+i.products+' sản phẩm và '+i.orders+' đơn.\nTrong máy này có '+db.products.length+' sản phẩm và '+db.orders.length+' đơn.\n\nTải dữ liệu từ Sheets về thay cho dữ liệu trong máy?')){
+      applyRemote(res.data);alert('Đã khôi phục dữ liệu từ Google Sheets.');return true;
+    }
+    return false;
+  }catch(e){if(!silentIfEmpty)alert('Không kết nối được Google Sheets. Kiểm tra mạng và địa chỉ.');return null;}
+}
+$('syncSave').onclick=async()=>{
+  const url=$('syncUrl').value.trim(),key=$('syncKey').value.trim();
+  if(!/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec$/.test(url))return alert('Địa chỉ phải có dạng https://script.google.com/macros/s/.../exec');
+  if(!key)return alert('Nhập mã bí mật');
+  cfg={url,key,pending:true};saveCfg();
+  let res;
+  try{res=await api('ping');}catch(e){alert('Không kết nối được. Kiểm tra lại địa chỉ, và phần "Ai có quyền truy cập" phải là "Bất kỳ ai".');renderSync();return;}
+  if(!res.ok){cfg.err=res.err;saveCfg();renderSync();return alert(res.err==='wrong_key'?'Mã bí mật không khớp với mã trong Apps Script.':'Lỗi: '+res.err);}
+  if(res.info.products+res.info.orders>0){
+    const r=await offerRestore(true);
+    if(r===true)return;
+  }
+  const ok=await push(false);
+  if(ok)alert('Đã kết nối và gửi dữ liệu lên Google Sheets.');
+  else renderSync();
+};
+$('syncNow').onclick=async()=>{
+  if(!cfg.url)return alert('Chưa kết nối Google Sheets');
+  let force=false;
+  if(cfg.err==='shrink'){
+    const i=cfg.info||{};
+    if(!confirm('Trên Sheets có '+(i.products??'?')+' sản phẩm, '+(i.orders??'?')+' đơn; máy này có '+db.products.length+' sản phẩm, '+db.orders.length+' đơn.\n\nGhi đè dữ liệu trên Sheets bằng dữ liệu trong máy? (Sheets vẫn giữ bản lưu đầu mỗi ngày trong 30 ngày)'))return;
+    force=true;cfg.err='';
+  }
+  cfg.pending=true;saveCfg();
+  const ok=await push(force);
+  if(ok)alert('Đã đồng bộ.');else if(cfg.err==='shrink')$('syncNow').click();else alert('Chưa gửi được: '+cfg.err);
+};
+$('syncLoad').onclick=()=>{if(!cfg.url)return alert('Chưa kết nối Google Sheets');offerRestore(false);};
+$('syncOff').onclick=()=>{
+  if(!cfg.url)return;
+  if(!confirm('Ngắt kết nối Google Sheets? Dữ liệu trong máy và trên Sheets vẫn giữ nguyên.'))return;
+  cfg={};saveCfg();$('syncUrl').value='';$('syncKey').value='';renderSync();
+};
+// Gửi lại khi có mạng / mở lại app / mỗi phút
+window.addEventListener('online',()=>{if(cfg.pending)push(false);});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&cfg.pending)push(false);});
+setInterval(()=>{if(cfg.pending&&!syncing)push(false);},60000);
+
+renderPick();renderCart();renderProducts();renderHist();loadBankForm();resetExtra();updateHint();renderBackupInfo();renderSync();
+// Mở app: máy trống mà Sheets có dữ liệu -> hỏi khôi phục; còn lại -> gửi phần chờ
+if(cfg.url){
+  if(!hasData(db))offerRestore(true);
+  else if(cfg.pending)push(false);
+}
 </script>
 </body>
 </html>
