@@ -431,7 +431,35 @@ async function getDetector(){
   }};
   return detector;
 }
+// Âm thanh "bíp" kiểu máy quét siêu thị (tạo bằng Web Audio, không cần file)
+let audioCtx=null;
+function unlockAudio(){ // phải gọi trong lúc bấm nút thì iPhone mới cho phát tiếng
+  try{
+    if(!audioCtx)audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+    if(audioCtx.state==='suspended')audioCtx.resume();
+    const b=audioCtx.createBuffer(1,1,22050),s=audioCtx.createBufferSource();s.buffer=b;s.connect(audioCtx.destination);s.start(0);
+  }catch(e){}
+}
+function tone(freq,start,dur,vol){
+  const o=audioCtx.createOscillator(),g=audioCtx.createGain();
+  o.type='square';o.frequency.value=freq;
+  const t=audioCtx.currentTime+start;
+  g.gain.setValueAtTime(0.0001,t);
+  g.gain.exponentialRampToValueAtTime(vol,t+0.005);
+  g.gain.setValueAtTime(vol,t+dur-0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  o.connect(g);g.connect(audioCtx.destination);o.start(t);o.stop(t+dur+0.02);
+}
+function beep(kind){
+  try{
+    if(!audioCtx)return;
+    if(audioCtx.state==='suspended')audioCtx.resume();
+    if(kind==='bad'){tone(440,0,0.12,0.25);tone(330,0.16,0.18,0.25);} // 2 tiếng trầm: mã chưa có
+    else tone(2800,0,0.11,0.18);                                        // 1 tiếng bíp cao: quét được
+  }catch(e){}
+}
 async function startScan(mode){
+  unlockAudio();
   scanMode=mode;lastHit='';hitCount=0;
   $('scanner').classList.remove('hide');
   $('scanner').querySelector('.aim').classList.remove('ok');
@@ -486,7 +514,7 @@ async function scanLoop(){
         if(!is1D||hitCount>=2){
           $('scanner').querySelector('.aim').classList.add('ok');
           try{navigator.vibrate&&navigator.vibrate(80);}catch(e){}
-          stopScan();onCode(code);scanBusy=false;return;
+          beep('ok');stopScan();onCode(code);scanBusy=false;return;
         }
       }
     }catch(e){}
@@ -520,6 +548,7 @@ function onCode(code){
   }
   const p=db.products.find(x=>x.barcode===code);
   if(p){addToCart(p.id);return;}
+  beep('bad');
   if(confirm('Mã '+code+' chưa có sản phẩm. Tạo sản phẩm mới?')){
     document.querySelector('nav button[data-t=t-prod]').click();
     resetPForm();$('pbar').value=code;$('pname').focus();
