@@ -361,8 +361,12 @@ function startScan(mode){
   scanMode=mode;
   $('scanner').classList.remove('hide');
   try{
-    if(!reader)reader=new ZXing.BrowserMultiFormatReader();
-    reader.decodeFromVideoDevice(undefined,'video',res=>{
+    const hints=new Map();
+    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS,[ZXing.BarcodeFormat.EAN_13,ZXing.BarcodeFormat.EAN_8,ZXing.BarcodeFormat.UPC_A,ZXing.BarcodeFormat.UPC_E,ZXing.BarcodeFormat.CODE_128,ZXing.BarcodeFormat.CODE_39,ZXing.BarcodeFormat.QR_CODE]);
+    hints.set(ZXing.DecodeHintType.TRY_HARDER,true);
+    reader=new ZXing.BrowserMultiFormatReader(hints);
+    const constraints={video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080},focusMode:{ideal:'continuous'}}};
+    reader.decodeFromConstraints(constraints,'video',res=>{
       if(res){const code=res.getText();stopScan();onCode(code);}
     }).catch(()=>{alert('Không mở được camera. Kiểm tra quyền camera trong Cài đặt của iPhone.');stopScan();});
   }catch(e){alert('Không tải được bộ quét mã. Kiểm tra kết nối mạng.');stopScan();}
