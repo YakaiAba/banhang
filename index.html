@@ -60,8 +60,8 @@ h2{font-size:16px;margin:14px 0 8px}
   </div>
   <div class="card">
    <div class="row">
-    <div style="flex:1"><label>Giảm giá (%)</label><input id="discPct" type="number" min="0" max="100" value="0"></div>
-    <div style="flex:1"><label>VAT (%)</label><input id="vatPct" type="number" min="0" max="100" value="0"></div>
+    <div style="flex:1"><label>Giảm giá (%)</label><input id="discPct" type="text" inputmode="decimal" value="0"></div>
+    <div style="flex:1"><label>VAT (%)</label><input id="vatPct" type="text" inputmode="decimal" value="0"></div>
    </div>
    <div class="sum"><span>Tạm tính</span><span id="sub"></span></div>
    <div class="sum"><span>Giảm giá</span><span id="dsc"></span></div>
@@ -74,7 +74,7 @@ h2{font-size:16px;margin:14px 0 8px}
  <section class="tab" id="t-prod">
   <div class="card">
    <div class="field"><label>Tên sản phẩm</label><input id="pname"></div>
-   <div class="field"><label>Giá (đ)</label><input id="pprice" type="number" min="0" inputmode="numeric"></div>
+   <div class="field"><label>Giá (đ)</label><input id="pprice" type="text" inputmode="numeric" placeholder="Ví dụ: 169.000"></div>
    <div class="field"><label>Mã vạch</label>
     <div class="row" style="margin:0"><input id="pbar" inputmode="numeric"><button id="scanProd">Quét</button></div>
    </div>
@@ -166,6 +166,9 @@ let pending=null;
 const $=id=>document.getElementById(id);
 const money=n=>Math.round(n).toLocaleString('vi-VN')+'đ';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const numOf=v=>+String(v||'').replace(/\D/g,'')||0;
+const fmtNum=n=>(+n||0).toLocaleString('vi-VN');
+const pct=v=>parseFloat(String(v||'').replace(',','.'))||0;
 const save=()=>localStorage.setItem(KEY,JSON.stringify(db));
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 const dayKey=d=>{const x=new Date(d);return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0');};
@@ -184,6 +187,23 @@ function nextCode(){
 function updateHint(){
   $('orderInfo').placeholder='Ví dụ: '+nextCode()+' - Tên khách hàng';
 }
+
+// Giá: tự thêm dấu chấm hàng nghìn khi gõ
+$('pprice').oninput=()=>{const d=$('pprice').value.replace(/\D/g,'');$('pprice').value=d?fmtNum(+d):'';};
+// Bấm vào ô số: xóa sẵn để gõ mới; bỏ trống rồi rời ô thì trả lại giá trị cũ
+const CLEAR_SEL='#discPct,#vatPct,#hdate,#pprice,.xp';
+document.addEventListener('focusin',e=>{
+  const el=e.target;if(!el.matches||!el.matches(CLEAR_SEL))return;
+  el.dataset.old=el.value;el.value='';
+});
+document.addEventListener('focusout',e=>{
+  const el=e.target;if(!el.matches||!el.matches(CLEAR_SEL))return;
+  if(el.value.trim()===''&&el.dataset.old){
+    el.value=el.dataset.old;
+    if(el.id==='discPct'||el.id==='vatPct')totals();
+  }
+  delete el.dataset.old;
+});
 
 // Chuyển tab
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{
@@ -255,8 +275,8 @@ $('cart').onclick=e=>{
 };
 function calc(){
   const sub=cart.reduce((s,c)=>s+c.price*c.qty,0);
-  const dp=Math.min(100,Math.max(0,+$('discPct').value||0));
-  const vp=Math.max(0,+$('vatPct').value||0);
+  const dp=Math.min(100,Math.max(0,pct($('discPct').value)));
+  const vp=Math.max(0,pct($('vatPct').value));
   const dsc=Math.round(sub*dp/100);
   const base=sub-dsc;
   const vat=Math.round(base*vp/100);
@@ -339,7 +359,7 @@ $('plist').onclick=e=>{
   const ed=e.target.dataset.e,x=e.target.dataset.x;
   if(ed){
     const p=db.products.find(z=>z.id===ed);
-    $('pid').value=p.id;$('pname').value=p.name;$('pprice').value=p.price;$('pbar').value=p.barcode||'';
+    $('pid').value=p.id;$('pname').value=p.name;$('pprice').value=fmtNum(p.price);$('pbar').value=p.barcode||'';
     window.scrollTo(0,0);
   }
   if(x&&confirm('Xóa sản phẩm này?')){
@@ -349,10 +369,10 @@ $('plist').onclick=e=>{
 function resetPForm(){$('pid').value='';$('pname').value='';$('pprice').value='';$('pbar').value='';}
 $('preset').onclick=resetPForm;
 $('psave').onclick=()=>{
-  const name=$('pname').value.trim(),price=+$('pprice').value,barcode=$('pbar').value.trim();
+  const name=$('pname').value.trim(),price=numOf($('pprice').value),barcode=$('pbar').value.trim();
   const id=$('pid').value;
   if(!name)return alert('Nhập tên sản phẩm');
-  if(!($('pprice').value!==''&&price>=0))return alert('Nhập giá hợp lệ');
+  if(!($('pprice').value.replace(/\D/g,'')!==''&&price>=0))return alert('Nhập giá hợp lệ');
   if(barcode&&db.products.some(p=>p.barcode===barcode&&p.id!==id))return alert('Mã vạch này đã dùng cho sản phẩm khác');
   if(id){Object.assign(db.products.find(z=>z.id===id),{name,price,barcode});}
   else db.products.push({id:uid(),name,price,barcode});
