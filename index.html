@@ -138,7 +138,9 @@ h2{font-size:16px;margin:14px 0 8px}
 </nav>
 <div class="overlay hide" id="scanner">
  <video id="video" playsinline muted></video>
- <p style="color:#fff" id="scanMsg">Đưa mã vạch vào khung hình</p>
+ <p style="color:#fff" id="scanMsg">Giữ điện thoại cách mã khoảng 15–25 cm</p>
+ <input id="manualCode" inputmode="numeric" placeholder="Hoặc gõ số mã vạch" style="width:300px;margin-bottom:8px">
+ <button class="primary" id="manualOk" style="width:300px;margin-bottom:8px">Dùng mã này</button>
  <button id="stop">Đóng</button>
 </div>
 <div class="overlay hide" id="payModal" style="background:rgba(0,0,0,.5)">
@@ -376,6 +378,13 @@ function stopScan(){
   $('scanner').classList.add('hide');
 }
 $('stop').onclick=stopScan;
+$('manualOk').onclick=()=>{
+  const v=$('manualCode').value.trim();
+  if(!v)return;
+  $('manualCode').value='';
+  stopScan();
+  onCode(v);
+};
 $('scanSell').onclick=()=>startScan('sell');
 $('scanProd').onclick=()=>startScan('prod');
 function onCode(code){
