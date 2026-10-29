@@ -91,7 +91,7 @@ h2{font-size:16px;margin:14px 0 8px}
    </div>
    <div class="row" style="margin:8px 0 0">
     <button id="hPrev" style="min-width:48px">‹</button>
-    <input id="hdate" inputmode="numeric" placeholder="15 2 26" style="text-align:center">
+    <select id="hD" aria-label="Ngày" style="flex:1;min-width:0;padding:10px 4px"></select><select id="hM" aria-label="Tháng" style="flex:1;min-width:0;padding:10px 4px"></select><select id="hY" aria-label="Năm" style="flex:1.2;min-width:0;padding:10px 4px"></select>
     <button id="hNext" style="min-width:48px">›</button>
    </div>
    <button id="hToday" style="width:100%;margin-top:8px">Về hiện tại</button>
@@ -127,7 +127,9 @@ h2{font-size:16px;margin:14px 0 8px}
    <button class="primary" id="bankSave" style="margin-top:10px">Lưu tài khoản</button>
   </div>
   <div class="card" style="margin-top:14px">
-   <button id="exp" style="width:100%">Xuất dữ liệu (sao lưu)</button>
+   <b style="font-size:14px">Sao lưu dữ liệu</b>
+   <p class="muted" id="bkInfo" style="margin:6px 0"></p>
+   <button id="exp" class="primary">Sao lưu ngay (lưu vào Tệp / Zalo / Drive)</button>
    <label style="margin-top:10px">Nhập dữ liệu từ file sao lưu</label>
    <input type="file" id="imp" accept="application/json">
   </div>
@@ -191,7 +193,7 @@ function updateHint(){
 // Giá: tự thêm dấu chấm hàng nghìn khi gõ
 $('pprice').oninput=()=>{const d=$('pprice').value.replace(/\D/g,'');$('pprice').value=d?fmtNum(+d):'';};
 // Bấm vào ô số: xóa sẵn để gõ mới; bỏ trống rồi rời ô thì trả lại giá trị cũ
-const CLEAR_SEL='#discPct,#vatPct,#hdate,#pprice,.xp';
+const CLEAR_SEL='#discPct,#vatPct,#pprice,.xp';
 document.addEventListener('focusin',e=>{
   const el=e.target;if(!el.matches||!el.matches(CLEAR_SEL))return;
   el.dataset.old=el.value;el.value='';
@@ -209,7 +211,7 @@ document.addEventListener('focusout',e=>{
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('on',x===b));
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on',t.id===b.dataset.t));
-  if(b.dataset.t==='t-hist'){loadBankForm();renderHist();}
+  if(b.dataset.t==='t-hist'){loadBankForm();renderHist();renderBackupInfo();}
 });
 
 // Bán hàng
@@ -594,24 +596,29 @@ $('hmode').onclick=e=>{
   document.querySelectorAll('#hmode button').forEach(x=>x.classList.toggle('on',x===b));
   renderHist();
 };
-$('hdate').onchange=()=>{
-  const txt=$('hdate').value.trim();
-  if(txt){
-    const p=txt.split(/\s+/).map(Number);
-    if(p.length===3&&p.every(Number.isInteger)){
-      let [d,mo,y]=p;
-      if(y<100)y+=2000;
-      const x=new Date(y,mo-1,d);
-      if(x.getFullYear()===y&&x.getMonth()===mo-1&&x.getDate()===d)histISO=dayKey(x);
-      else alert('Ngày không hợp lệ');
-    }else alert('Nhập theo mẫu: ngày tháng năm, ví dụ 15 2 26');
-  }
-  renderHist();
-};
+// Chọn ngày bằng danh sách
+function fillDateSel(){
+  const [y,m,d]=histISO.split('-').map(Number);
+  const now=new Date().getFullYear();
+  const y0=Math.min(y,now-1,...db.orders.map(o=>new Date(o.time).getFullYear()));
+  const opt=(v,t,sel)=>`<option value="${v}"${v===sel?' selected':''}>${t}</option>`;
+  let yo='';for(let i=Math.max(y,now);i>=y0;i--)yo+=opt(i,String(i),y);
+  let mo='';for(let i=1;i<=12;i++)mo+=opt(i,'Th '+i,m);
+  const nd=new Date(y,m,0).getDate();
+  let dd='';for(let i=1;i<=nd;i++)dd+=opt(i,String(i),d);
+  $('hY').innerHTML=yo;$('hM').innerHTML=mo;$('hD').innerHTML=dd;
+  $('hD').style.display=(histMode==='day'||histMode==='week')?'':'none';
+  $('hM').style.display=histMode==='year'?'none':'';
+}
+['hD','hM','hY'].forEach(id=>$(id).onchange=()=>{
+  const y=+$('hY').value,m=+$('hM').value;
+  const d=Math.min(+$('hD').value||1,new Date(y,m,0).getDate());
+  histISO=dayKey(new Date(y,m-1,d));renderHist();
+});
 function renderHist(){
   updateHint();
   const day=histISO;
-  $('hdate').value=toDMY(day);
+  fillDateSel();
   $('hday').textContent=periodLabel(day,histMode);
   const [rs,re]=rangeOf(day,histMode);
   const orders=db.orders.filter(o=>{const t=new Date(o.time);return t>=rs&&t<re;}).sort((a,b)=>b.time.localeCompare(a.time));
@@ -636,25 +643,43 @@ $('hlist').onclick=e=>{
 };
 
 // Sao lưu / khôi phục
-$('exp').onclick=()=>{
-  const blob=new Blob([JSON.stringify(db,null,2)],{type:'application/json'});
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(blob);a.download='banhang-'+dayKey(new Date())+'.json';
-  document.body.appendChild(a);a.click();a.remove();
+$('exp').onclick=async()=>{
+  const name='banhang-'+dayKey(new Date())+'.json';
+  const text=JSON.stringify(db,null,2);
+  const file=new File([text],name,{type:'application/json'});
+  let done=false;
+  try{
+    if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],title:name});done=true;}
+  }catch(e){if(e&&e.name==='AbortError')return;}
+  if(!done){
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(file);a.download=name;
+    document.body.appendChild(a);a.click();a.remove();
+  }
+  db.lastBackup=new Date().toISOString();save();renderBackupInfo();
 };
+function renderBackupInfo(){
+  const n=db.products.length,o=db.orders.length;
+  const lb=db.lastBackup?new Date(db.lastBackup):null;
+  const days=lb?Math.floor((Date.now()-lb)/864e5):null;
+  $('bkInfo').textContent='Đang có '+n+' sản phẩm, '+o+' đơn. '+(lb?'Lần sao lưu gần nhất: '+lb.toLocaleDateString('vi-VN')+' ('+days+' ngày trước).':'Chưa sao lưu lần nào.');
+  $('bkInfo').style.color=(!lb||days>=3)&&(n||o)?'#c62828':'';
+}
+// Xin trình duyệt giữ dữ liệu lâu dài, hạn chế tự xóa
+try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist();}catch(e){}
 $('imp').onchange=async e=>{
   const f=e.target.files[0];if(!f)return;
   try{
     const data=JSON.parse(await f.text());
     if(!Array.isArray(data.products)||!Array.isArray(data.orders))throw new Error('bad');
     if(!confirm('Thay toàn bộ dữ liệu hiện tại bằng file này?'))return;
-    db=data;save();renderProducts();renderPick();renderHist();loadBankForm();
+    db=data;save();renderProducts();renderPick();renderHist();loadBankForm();renderBackupInfo();
     alert('Đã nhập dữ liệu');
   }catch(err){alert('File không hợp lệ');}
   finally{e.target.value='';}
 };
 
-renderPick();renderCart();renderProducts();renderHist();loadBankForm();resetExtra();updateHint();
+renderPick();renderCart();renderProducts();renderHist();loadBankForm();resetExtra();updateHint();renderBackupInfo();
 </script>
 </body>
 </html>
