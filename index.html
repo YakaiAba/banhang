@@ -233,8 +233,12 @@ document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{
 // Bán hàng
 function renderPick(){
   const q=$('search').value.trim().toLowerCase();
-  const list=db.products.filter(p=>!q||p.name.toLowerCase().includes(q)||(p.barcode||'').includes(q));
-  $('pick').innerHTML=list.length?list.map(p=>`<button data-id="${p.id}"><b>${esc(p.name)}</b><br><span class="muted">${money(p.price)}</span></button>`).join(''):'<p class="muted">Chưa có sản phẩm. Vào tab Sản phẩm để thêm.</p>';
+  let list=db.products.filter(p=>!q||p.name.toLowerCase().includes(q)||(p.barcode||'').includes(q));
+  // Không tìm: chỉ hiện 4 sản phẩm bán gần nhất (chưa bán thì theo thứ tự mới thêm)
+  const recent=p=>p.lastUsed||parseInt(String(p.id).slice(0,8),36)||0;
+  let more=0;
+  if(!q){list=[...list].sort((a,b)=>recent(b)-recent(a));more=Math.max(0,list.length-4);list=list.slice(0,4);}
+  $('pick').innerHTML=list.length?list.map(p=>`<button data-id="${p.id}"><b>${esc(p.name)}</b><br><span class="muted">${money(p.price)}</span></button>`).join('')+(more?`<p class="muted" style="grid-column:1/-1;margin:0">Còn ${more} sản phẩm khác — gõ tên hoặc bấm Quét để tìm.</p>`:''):(q?'<p class="muted">Không tìm thấy sản phẩm.</p>':'<p class="muted">Chưa có sản phẩm. Vào tab Sản phẩm để thêm.</p>');
 }
 $('pick').onclick=e=>{const b=e.target.closest('button[data-id]');if(b)addToCart(b.dataset.id);};
 $('search').oninput=renderPick;
@@ -353,8 +357,9 @@ $('pay').onclick=()=>{
 function finishPay(method){
   if(!pending)return;
   const {t,code,info,items}=pending;
+  const now=Date.now();cart.forEach(c=>{const p=db.products.find(x=>x.id===c.pid);if(p)p.lastUsed=now;});
   db.orders.push({id:uid(),code,info,time:new Date().toISOString(),method,items,subtotal:t.sub,discPct:t.dp,discAmt:t.dsc,vatPct:t.vp,vat:t.vat,total:t.total});
-  save();
+  save();renderPick();
   pending=null;
   $('payModal').classList.add('hide');
   $('payQR').removeAttribute('src');
@@ -727,7 +732,7 @@ $('imp').onchange=async e=>{
 // ===== Đồng bộ Google Sheets =====
 const SYNC='banhang.sync';
 let cfg={};try{cfg=JSON.parse(localStorage.getItem(SYNC)||'{}');}catch(e){cfg={};}
-let syncing=false,again=false,syncTimer=null;
+let syncing=false,again=false,syncTimer=null,retryN=0;
 const saveCfg=()=>localStorage.setItem(SYNC,JSON.stringify(cfg));
 const hasData=d=>d&&((d.products||[]).length+(d.orders||[]).length)>0;
 function renderSync(){
@@ -739,12 +744,12 @@ function renderSync(){
   if(cfg.err==='shrink'){dot.textContent='⚠ Chưa đồng bộ';msg='Trên Sheets đang có nhiều dữ liệu hơn máy này nên app tạm dừng gửi để tránh ghi đè. Bấm "Tải từ Sheets về" để lấy lại, hoặc "Đồng bộ ngay" để ghi đè.';col='#c62828';}
   else if(cfg.err==='wrong_key'){dot.textContent='⚠ Sai mã';msg='Mã bí mật không khớp với mã trong Apps Script.';col='#c62828';}
   else if(syncing){dot.textContent='⏳ Đang lưu';msg='Đang gửi lên Sheets…';}
-  else if(cfg.pending){dot.textContent='⏳ Chờ gửi';msg='Có thay đổi chưa gửi'+(cfg.err?' (lỗi: '+cfg.err+')':'')+'. App sẽ tự gửi lại khi có mạng. Lần gửi được gần nhất: '+last+'.';col=cfg.err?'#c62828':'';}
+  else if(cfg.pending){dot.textContent='⏳ Chờ gửi';msg='Có thay đổi chưa gửi'+(cfg.err==='busy'?' (máy chủ Google đang bận, app tự thử lại)':cfg.err?' (lỗi: '+cfg.err+')':'')+'. App sẽ tự gửi lại khi có mạng. Lần gửi được gần nhất: '+last+'.';col=cfg.err?'#c62828':'';}
   else{dot.textContent='☁ Đã lưu';msg='Đã đồng bộ lúc '+last+'.';col='#2e7d32';}
   $('syncInfo').textContent=msg;$('syncInfo').style.color=col;
 }
 async function api(action,extra={}){
-  const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),30000);
+  const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),90000);
   try{
     const r=await fetch(cfg.url,{method:'POST',body:JSON.stringify({key:cfg.key,action,...extra}),signal:ctl.signal});
     const j=await r.json();
@@ -754,7 +759,7 @@ async function api(action,extra={}){
 function markDirty(){
   if(!cfg.url)return;
   cfg.pending=true;saveCfg();renderSync();
-  clearTimeout(syncTimer);syncTimer=setTimeout(()=>push(false),1500);
+  clearTimeout(syncTimer);syncTimer=setTimeout(()=>push(false),3000);
 }
 async function push(force){
   if(!cfg.url||!cfg.key)return false;
@@ -768,7 +773,11 @@ async function push(force){
     else{cfg.err=res.err||'lỗi';if(res.err==='shrink')cfg.info=res.info;}
   }catch(e){cfg.err=navigator.onLine?'không kết nối được':'mất mạng';}
   syncing=false;saveCfg();renderSync();
-  if(again&&cfg.pending)push(false);
+  if(ok)retryN=0;
+  else if(cfg.pending&&cfg.err!=='shrink'&&cfg.err!=='wrong_key'){ // bận / mất mạng: tự thử lại 5s, 15s, 30s, 60s
+    clearTimeout(syncTimer);syncTimer=setTimeout(()=>push(false),[5,15,30,60][Math.min(retryN++,3)]*1000);
+  }
+  if(again&&cfg.pending&&ok)push(false);
   return ok;
 }
 function applyRemote(data){
