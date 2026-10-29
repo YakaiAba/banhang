@@ -1,0 +1,536 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Bán hàng">
+<meta name="theme-color" content="#f26a1b">
+<title>Bán hàng</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/zxing-library/0.21.3/zxing-library.min.js"></script>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,system-ui,sans-serif;background:#f4f4f6;color:#222;padding-bottom:70px}
+header{background:#f26a1b;color:#fff;padding:14px 16px;font-size:18px;font-weight:600;position:sticky;top:0;z-index:5}
+main{padding:12px}
+.tab{display:none}.tab.on{display:block}
+nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:#fff;border-top:1px solid #ddd;padding-bottom:env(safe-area-inset-bottom)}
+nav button{flex:1;padding:12px 4px;border:0;background:none;font-size:14px;color:#666}
+nav button.on{color:#f26a1b;font-weight:600}
+.card{background:#fff;border-radius:12px;padding:12px;margin-bottom:10px;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+input,select{font-size:16px;padding:10px;border:1px solid #ccc;border-radius:8px;width:100%;background:#fff}
+button{font-size:15px;padding:10px 14px;border-radius:8px;border:1px solid #ccc;background:#fff;color:#222}
+button.primary{background:#f26a1b;color:#fff;border-color:#f26a1b;width:100%}
+button.green{background:#2e7d32;color:#fff;border-color:#2e7d32;width:100%}
+button.danger{color:#c62828;border-color:#e0a0a0}
+.row{display:flex;gap:8px;align-items:center;margin-bottom:10px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.grid button{text-align:left;min-height:64px}
+.muted{color:#777;font-size:13px}
+.line{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #eee;gap:6px}
+.sum{display:flex;justify-content:space-between;padding:4px 0}
+.total{font-size:18px;font-weight:700;color:#f26a1b;border-top:1px solid #ddd;margin-top:6px;padding-top:8px}
+.qty button{padding:4px 10px}
+.overlay{position:fixed;inset:0;background:#000;z-index:20;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px}
+.overlay.hide{display:none}
+video{width:100%;max-height:70vh;background:#000}
+label{display:block;font-size:14px;margin:8px 0 4px}
+.field{margin-bottom:8px}
+h2{font-size:16px;margin:14px 0 8px}
+.seg{display:flex;gap:6px}.seg button{flex:1;padding:8px 2px;font-size:14px}.seg button.on{background:#f26a1b;color:#fff;border-color:#f26a1b}
+</style>
+</head>
+<body>
+<header>Bán hàng</header>
+<main>
+ <section class="tab on" id="t-sell">
+  <div class="row"><input id="search" placeholder="Tìm sản phẩm"><button id="scanSell">Quét</button></div>
+  <div class="grid" id="pick"></div>
+  <h2>Đơn hiện tại</h2>
+  <div class="card">
+   <label>Thông tin (mã đơn, tên khách)</label>
+   <input id="orderInfo" placeholder="Ví dụ: DH001 - Tên khách hàng">
+  </div>
+  <div class="card" id="cart"></div>
+  <div class="card" id="extraBox">
+   <b style="font-size:14px">Thêm sản phẩm</b>
+   <div id="extraRows" style="margin-top:8px"></div>
+  </div>
+  <div class="card">
+   <div class="row">
+    <div style="flex:1"><label>Giảm giá (%)</label><input id="discPct" type="number" min="0" max="100" value="0"></div>
+    <div style="flex:1"><label>VAT (%)</label><input id="vatPct" type="number" min="0" max="100" value="0"></div>
+   </div>
+   <div class="sum"><span>Tạm tính</span><span id="sub"></span></div>
+   <div class="sum"><span>Giảm giá</span><span id="dsc"></span></div>
+   <div class="sum"><span>VAT</span><span id="vat"></span></div>
+   <div class="sum total"><span>Khách phải trả</span><span id="tot"></span></div>
+   <button class="primary" id="pay" style="margin-top:10px">Thanh toán</button>
+   <button id="cancel" style="width:100%;margin-top:8px" class="danger">Hủy đơn</button>
+  </div>
+ </section>
+ <section class="tab" id="t-prod">
+  <div class="card">
+   <div class="field"><label>Tên sản phẩm</label><input id="pname"></div>
+   <div class="field"><label>Giá (đ)</label><input id="pprice" type="number" min="0" inputmode="numeric"></div>
+   <div class="field"><label>Mã vạch</label>
+    <div class="row" style="margin:0"><input id="pbar" inputmode="numeric"><button id="scanProd">Quét</button></div>
+   </div>
+   <input type="hidden" id="pid">
+   <div class="row"><button class="primary" id="psave">Lưu sản phẩm</button><button id="preset">Xóa form</button></div>
+  </div>
+  <div id="plist"></div>
+ </section>
+ <section class="tab" id="t-hist">
+  <div class="card">
+   <div id="hday" style="font-weight:600;margin-bottom:8px"></div>
+   <div class="seg" id="hmode">
+    <button data-m="day" class="on">Ngày</button><button data-m="week">Tuần</button><button data-m="month">Tháng</button><button data-m="year">Năm</button>
+   </div>
+   <div class="row" style="margin:8px 0 0">
+    <button id="hPrev" style="min-width:48px">‹</button>
+    <input id="hdate" inputmode="numeric" placeholder="15 2 26" style="text-align:center">
+    <button id="hNext" style="min-width:48px">›</button>
+   </div>
+   <button id="hToday" style="width:100%;margin-top:8px">Về hiện tại</button>
+   <div class="sum" style="margin-top:8px"><span>Số đơn</span><span id="hcount"></span></div>
+   <div class="sum"><span>Tiền mặt</span><span id="hcash"></span></div>
+   <div class="sum"><span>Chuyển khoản</span><span id="hbank"></span></div>
+   <div class="sum total"><span>Doanh thu</span><span id="hrev"></span></div>
+  </div>
+  <div id="hlist"></div>
+  <div class="card" style="margin-top:14px">
+   <b style="font-size:14px">Tài khoản nhận chuyển khoản</b>
+   <label>Ngân hàng</label>
+   <select id="bankSel">
+    <option value="970436">Vietcombank</option>
+    <option value="970415">VietinBank</option>
+    <option value="970418">BIDV</option>
+    <option value="970407">Techcombank</option>
+    <option value="970422">MB Bank</option>
+    <option value="970416">ACB</option>
+    <option value="970423">TPBank</option>
+    <option value="970432">VPBank</option>
+    <option value="970405">Agribank</option>
+    <option value="970403">Sacombank</option>
+   </select>
+   <label>Số tài khoản</label>
+   <input id="bankAcc" inputmode="numeric">
+   <label>Tên chủ tài khoản (không dấu)</label>
+   <input id="bankName">
+   <label>Hoặc tải lên ảnh mã QR của ngân hàng</label>
+   <input type="file" id="bankQR" accept="image/*">
+   <img id="bankQRPrev" alt="Mã QR đã tải lên" style="display:none;width:160px;margin-top:8px;border-radius:8px">
+   <button id="bankQRClear" class="danger" style="display:none;margin-top:6px">Xóa ảnh QR</button>
+   <button class="primary" id="bankSave" style="margin-top:10px">Lưu tài khoản</button>
+  </div>
+  <div class="card" style="margin-top:14px">
+   <button id="exp" style="width:100%">Xuất dữ liệu (sao lưu)</button>
+   <label style="margin-top:10px">Nhập dữ liệu từ file sao lưu</label>
+   <input type="file" id="imp" accept="application/json">
+  </div>
+ </section>
+</main>
+<nav>
+ <button class="on" data-t="t-sell">Bán hàng</button>
+ <button data-t="t-prod">Sản phẩm</button>
+ <button data-t="t-hist">Lịch sử</button>
+</nav>
+<div class="overlay hide" id="scanner">
+ <video id="video" playsinline muted></video>
+ <p style="color:#fff" id="scanMsg">Đưa mã vạch vào khung hình</p>
+ <button id="stop">Đóng</button>
+</div>
+<div class="overlay hide" id="payModal" style="background:rgba(0,0,0,.5)">
+ <div class="card" style="width:100%;max-width:360px;text-align:center">
+  <b>Thanh toán</b>
+  <div id="payTotal" style="font-size:22px;color:#f26a1b;font-weight:700;margin:6px 0"></div>
+  <img id="payQR" alt="Mã QR chuyển khoản" style="width:100%;max-width:280px;display:none;margin:0 auto">
+  <p id="payErr" style="display:none;color:#c62828;font-size:14px;margin:6px 0"></p>
+  <p id="payBankInfo" style="font-size:14px;text-align:left;margin:6px 0"></p>
+  <p class="muted" id="payNote"></p>
+  <button class="primary" id="payCash" style="margin-bottom:8px">Đã thanh toán tiền mặt</button>
+  <button class="green" id="payBank">Đã thanh toán chuyển khoản</button>
+  <button id="payBack" style="width:100%;margin-top:8px">Quay lại</button>
+ </div>
+</div>
+<script>
+const KEY='banhang.v1';
+let db=JSON.parse(localStorage.getItem(KEY)||'{"products":[],"orders":[]}');
+let cart=[];
+let pending=null;
+const $=id=>document.getElementById(id);
+const money=n=>Math.round(n).toLocaleString('vi-VN')+'đ';
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const save=()=>localStorage.setItem(KEY,JSON.stringify(db));
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+const dayKey=d=>{const x=new Date(d);return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0');};
+const methodName=m=>m==='cash'?'Tiền mặt':m==='bank'?'Chuyển khoản':'—';
+
+// Mã đơn tự tăng trong ngày: DH001, DH002, ...
+function nextCode(){
+  const today=dayKey(new Date());
+  let max=0;
+  db.orders.forEach(o=>{
+    const m=/^DH(\d+)$/.exec(o.code||'');
+    if(m&&dayKey(o.time)===today)max=Math.max(max,+m[1]);
+  });
+  return 'DH'+String(max+1).padStart(3,'0');
+}
+function updateHint(){
+  $('orderInfo').placeholder='Ví dụ: '+nextCode()+' - Tên khách hàng';
+}
+
+// Chuyển tab
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('on',x===b));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on',t.id===b.dataset.t));
+  if(b.dataset.t==='t-hist'){loadBankForm();renderHist();}
+});
+
+// Bán hàng
+function renderPick(){
+  const q=$('search').value.trim().toLowerCase();
+  const list=db.products.filter(p=>!q||p.name.toLowerCase().includes(q)||(p.barcode||'').includes(q));
+  $('pick').innerHTML=list.length?list.map(p=>`<button data-id="${p.id}"><b>${esc(p.name)}</b><br><span class="muted">${money(p.price)}</span></button>`).join(''):'<p class="muted">Chưa có sản phẩm. Vào tab Sản phẩm để thêm.</p>';
+}
+$('pick').onclick=e=>{const b=e.target.closest('button[data-id]');if(b)addToCart(b.dataset.id);};
+$('search').oninput=renderPick;
+
+// Thêm món nhanh (chưa có trong danh sách sản phẩm)
+function addExtraRow(){
+  const r=document.createElement('div');
+  r.className='row';
+  r.style.marginBottom='8px';
+  r.innerHTML='<input class="xn" placeholder="Tên sản phẩm" style="flex:1"><input class="xp" type="text" inputmode="numeric" placeholder="Giá (đ)" style="width:120px">';
+  $('extraRows').appendChild(r);
+}
+function resetExtra(){
+  $('extraRows').innerHTML='';
+  addExtraRow();
+}
+$('extraRows').oninput=e=>{
+  const r=e.target.closest('.row');
+  if(!r)return;
+  const n=r.querySelector('.xn').value.trim();
+  const xp=r.querySelector('.xp');
+  const digits=xp.value.replace(/\D/g,'');
+  xp.value=digits?(+digits).toLocaleString('vi-VN'):'';
+  const pv=digits;
+  const valid=n&&pv!=='';
+  if(r.dataset.cid){
+    if(!valid)return;
+    const it=cart.find(c=>c.pid===r.dataset.cid);
+    if(it){it.name=n;it.price=+pv;renderCart();}
+    return;
+  }
+  if(valid){
+    const cid='x'+uid();
+    cart.push({pid:cid,name:n,price:+pv,qty:1});
+    r.dataset.cid=cid;
+    renderCart();
+    addExtraRow();
+  }
+};
+
+function addToCart(pid){
+  const p=db.products.find(x=>x.id===pid);if(!p)return;
+  const it=cart.find(x=>x.pid===pid);
+  if(it)it.qty++;else cart.push({pid,name:p.name,price:p.price,qty:1});
+  renderCart();
+}
+function renderCart(){
+  $('cart').innerHTML=cart.length?cart.map((c,i)=>`<div class="line"><div style="flex:1"><b>${esc(c.name)}</b><div class="muted">${money(c.price)}</div></div><div class="qty"><button data-i="${i}" data-d="-1">−</button> ${c.qty} <button data-i="${i}" data-d="1">+</button></div><div style="width:90px;text-align:right">${money(c.price*c.qty)}</div></div>`).join(''):'<p class="muted">Chưa có món nào.</p>';
+  totals();
+}
+$('cart').onclick=e=>{
+  const b=e.target.closest('button[data-i]');if(!b)return;
+  const i=+b.dataset.i;cart[i].qty+=+b.dataset.d;
+  if(cart[i].qty<=0)cart.splice(i,1);
+  renderCart();
+};
+function calc(){
+  const sub=cart.reduce((s,c)=>s+c.price*c.qty,0);
+  const dp=Math.min(100,Math.max(0,+$('discPct').value||0));
+  const vp=Math.max(0,+$('vatPct').value||0);
+  const dsc=Math.round(sub*dp/100);
+  const base=sub-dsc;
+  const vat=Math.round(base*vp/100);
+  return{sub,dp,vp,dsc,vat,total:base+vat};
+}
+function totals(){
+  const t=calc();
+  $('sub').textContent=money(t.sub);
+  $('dsc').textContent='- '+money(t.dsc);
+  $('vat').textContent=money(t.vat);
+  $('tot').textContent=money(t.total);
+}
+['discPct','vatPct'].forEach(id=>$(id).oninput=totals);
+
+function clearOrder(){
+  cart=[];
+  $('discPct').value=0;$('vatPct').value=0;
+  $('orderInfo').value='';
+  renderCart();resetExtra();updateHint();
+}
+
+// Thanh toán: hiện mã QR rồi chọn hình thức
+$('pay').onclick=()=>{
+  if(!cart.length)return alert('Chưa có món nào');
+  const t=calc();
+  const info=$('orderInfo').value.trim();
+  const code=nextCode();
+  pending={t,code,info,items:cart.map(c=>({name:c.name,price:c.price,qty:c.qty}))};
+  $('payTotal').textContent=money(t.total);
+  const b=db.bank;
+  $('payErr').style.display='none';
+  const content=info||code;
+  if(b&&b.qr){
+    $('payQR').onerror=null;$('payQR').onload=null;
+    $('payQR').src=b.qr;
+    $('payQR').style.display='block';
+    $('payErr').style.display='none';
+    $('payBankInfo').innerHTML=b.acc?bankHtml(b):'';
+    $('payNote').textContent='Số tiền: '+money(t.total)+'. Nội dung chuyển khoản: '+content;
+  }else if(b&&b.bin&&b.acc){
+    const content=info||code;
+    const bn=[...document.querySelectorAll('#bankSel option')].find(o=>o.value===b.bin)?.textContent||'';
+    $('payBankInfo').innerHTML='Ngân hàng: <b>'+esc(bn)+'</b><br>Số tài khoản: <b>'+esc(b.acc)+'</b><br>Chủ tài khoản: <b>'+esc(b.name||'—')+'</b>';
+    $('payQR').onerror=()=>{$('payQR').style.display='none';$('payErr').textContent='Không tải được mã QR. Kiểm tra kết nối mạng, hoặc khách chuyển theo số tài khoản phía trên.';$('payErr').style.display='block';};
+    $('payQR').onload=()=>{$('payErr').style.display='none';};
+    $('payQR').src='https://img.vietqr.io/image/'+b.bin+'-'+encodeURIComponent(b.acc)+'-compact2.png?amount='+Math.round(t.total)+'&addInfo='+encodeURIComponent(content)+'&accountName='+encodeURIComponent(b.name||'');
+    $('payQR').style.display='block';
+    $('payNote').textContent='Nội dung chuyển khoản: '+content;
+  }else{
+    $('payQR').style.display='none';
+    $('payBankInfo').textContent='';
+    $('payNote').textContent='Chưa cài tài khoản ngân hàng. Vào tab Lịch sử để nhập, hoặc chọn tiền mặt.';
+  }
+  $('payModal').classList.remove('hide');
+};
+function finishPay(method){
+  if(!pending)return;
+  const {t,code,info,items}=pending;
+  db.orders.push({id:uid(),code,info,time:new Date().toISOString(),method,items,subtotal:t.sub,discPct:t.dp,discAmt:t.dsc,vatPct:t.vp,vat:t.vat,total:t.total});
+  save();
+  pending=null;
+  $('payModal').classList.add('hide');
+  $('payQR').removeAttribute('src');
+  $('payErr').style.display='none';
+  clearOrder();
+  alert('Đã lưu đơn '+code+' ('+money(t.total)+') - '+methodName(method));
+}
+$('payCash').onclick=()=>finishPay('cash');
+$('payBank').onclick=()=>finishPay('bank');
+$('payBack').onclick=()=>{pending=null;$('payModal').classList.add('hide');};
+
+$('cancel').onclick=()=>{if(cart.length&&confirm('Hủy đơn hiện tại?'))clearOrder();};
+
+// Sản phẩm
+function renderProducts(){
+  const list=[...db.products].sort((a,b)=>a.name.localeCompare(b.name,'vi'));
+  $('plist').innerHTML=list.length?list.map(p=>`<div class="card line"><div style="flex:1"><b>${esc(p.name)}</b><div class="muted">${money(p.price)}${p.barcode?' · '+esc(p.barcode):''}</div></div><button data-e="${p.id}">Sửa</button> <button class="danger" data-x="${p.id}">Xóa</button></div>`).join(''):'<p class="muted">Chưa có sản phẩm.</p>';
+}
+$('plist').onclick=e=>{
+  const ed=e.target.dataset.e,x=e.target.dataset.x;
+  if(ed){
+    const p=db.products.find(z=>z.id===ed);
+    $('pid').value=p.id;$('pname').value=p.name;$('pprice').value=p.price;$('pbar').value=p.barcode||'';
+    window.scrollTo(0,0);
+  }
+  if(x&&confirm('Xóa sản phẩm này?')){
+    db.products=db.products.filter(z=>z.id!==x);save();renderProducts();renderPick();
+  }
+};
+function resetPForm(){$('pid').value='';$('pname').value='';$('pprice').value='';$('pbar').value='';}
+$('preset').onclick=resetPForm;
+$('psave').onclick=()=>{
+  const name=$('pname').value.trim(),price=+$('pprice').value,barcode=$('pbar').value.trim();
+  const id=$('pid').value;
+  if(!name)return alert('Nhập tên sản phẩm');
+  if(!($('pprice').value!==''&&price>=0))return alert('Nhập giá hợp lệ');
+  if(barcode&&db.products.some(p=>p.barcode===barcode&&p.id!==id))return alert('Mã vạch này đã dùng cho sản phẩm khác');
+  if(id){Object.assign(db.products.find(z=>z.id===id),{name,price,barcode});}
+  else db.products.push({id:uid(),name,price,barcode});
+  save();resetPForm();renderProducts();renderPick();
+};
+
+// Quét mã vạch bằng camera
+let reader=null,scanMode='';
+function startScan(mode){
+  scanMode=mode;
+  $('scanner').classList.remove('hide');
+  try{
+    if(!reader)reader=new ZXing.BrowserMultiFormatReader();
+    reader.decodeFromVideoDevice(undefined,'video',res=>{
+      if(res){const code=res.getText();stopScan();onCode(code);}
+    }).catch(()=>{alert('Không mở được camera. Kiểm tra quyền camera trong Cài đặt của iPhone.');stopScan();});
+  }catch(e){alert('Không tải được bộ quét mã. Kiểm tra kết nối mạng.');stopScan();}
+}
+function stopScan(){
+  try{reader&&reader.reset();}catch(e){}
+  $('scanner').classList.add('hide');
+}
+$('stop').onclick=stopScan;
+$('scanSell').onclick=()=>startScan('sell');
+$('scanProd').onclick=()=>startScan('prod');
+function onCode(code){
+  if(scanMode==='prod'){$('pbar').value=code;return;}
+  const p=db.products.find(x=>x.barcode===code);
+  if(p){addToCart(p.id);return;}
+  if(confirm('Mã '+code+' chưa có sản phẩm. Tạo sản phẩm mới?')){
+    document.querySelector('nav button[data-t=t-prod]').click();
+    resetPForm();$('pbar').value=code;$('pname').focus();
+  }
+}
+
+// Tài khoản ngân hàng
+let tmpQR;
+function bankHtml(b){
+  const bn=[...document.querySelectorAll('#bankSel option')].find(o=>o.value===b.bin)?.textContent||'';
+  return 'Ngân hàng: <b>'+esc(bn)+'</b><br>Số tài khoản: <b>'+esc(b.acc)+'</b><br>Chủ tài khoản: <b>'+esc(b.name||'—')+'</b>';
+}
+function showQRPrev(src){
+  $('bankQRPrev').src=src||'';
+  $('bankQRPrev').style.display=src?'block':'none';
+  $('bankQRClear').style.display=src?'inline-block':'none';
+}
+function loadBankForm(){
+  const b=db.bank||{};
+  if(b.bin)$('bankSel').value=b.bin;
+  $('bankAcc').value=b.acc||'';
+  $('bankName').value=b.name||'';
+  tmpQR=undefined;
+  $('bankQR').value='';
+  showQRPrev(b.qr||null);
+}
+$('bankQR').onchange=async e=>{
+  const f=e.target.files[0];if(!f)return;
+  try{
+    const url=URL.createObjectURL(f);
+    const img=new Image();
+    img.src=url;
+    await img.decode();
+    const s=Math.min(1,640/Math.max(img.width,img.height));
+    const c=document.createElement('canvas');
+    c.width=Math.round(img.width*s);c.height=Math.round(img.height*s);
+    c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+    URL.revokeObjectURL(url);
+    tmpQR=c.toDataURL('image/jpeg',0.9);
+    showQRPrev(tmpQR);
+  }catch(err){alert('Không đọc được ảnh. Hãy chọn file ảnh khác.');e.target.value='';}
+};
+$('bankQRClear').onclick=()=>{tmpQR=null;$('bankQR').value='';showQRPrev(null);};
+$('bankSave').onclick=()=>{
+  const acc=$('bankAcc').value.trim();
+  const old=db.bank||{};
+  const qr=tmpQR===undefined?old.qr:tmpQR;
+  if(!acc&&!qr)return alert('Nhập số tài khoản hoặc tải lên ảnh mã QR');
+  db.bank={bin:$('bankSel').value,acc,name:$('bankName').value.trim(),qr:qr||null};
+  tmpQR=undefined;
+  save();
+  alert('Đã lưu');
+};
+
+// Lịch sử
+function viDate(dt){return dt.toLocaleDateString('vi-VN',{weekday:'long',day:'numeric',month:'long',year:'numeric'});}
+let histISO=dayKey(new Date());
+let histMode='day';
+function toDMY(iso){const [y,m,d]=iso.split('-').map(Number);return d+' '+m+' '+String(y).slice(-2);}
+function viShort(x){return String(x.getDate()).padStart(2,'0')+'/'+String(x.getMonth()+1).padStart(2,'0')+'/'+x.getFullYear();}
+function rangeOf(iso,mode){
+  const [y,m,d]=iso.split('-').map(Number);
+  if(mode==='day')return [new Date(y,m-1,d),new Date(y,m-1,d+1)];
+  if(mode==='week'){const wd=(new Date(y,m-1,d).getDay()+6)%7;return [new Date(y,m-1,d-wd),new Date(y,m-1,d-wd+7)];}
+  if(mode==='month')return [new Date(y,m-1,1),new Date(y,m,1)];
+  return [new Date(y,0,1),new Date(y+1,0,1)];
+}
+function periodLabel(iso,mode){
+  const [s,e]=rangeOf(iso,mode);
+  if(mode==='day')return viDate(s);
+  if(mode==='week')return 'Tuần từ '+viShort(s)+' đến '+viShort(new Date(e.getFullYear(),e.getMonth(),e.getDate()-1));
+  if(mode==='month')return 'Tháng '+(s.getMonth()+1)+' năm '+s.getFullYear();
+  return 'Năm '+s.getFullYear();
+}
+function shiftPeriod(n){
+  const [y,m,d]=histISO.split('-').map(Number);
+  let x;
+  if(histMode==='day')x=new Date(y,m-1,d+n);
+  else if(histMode==='week')x=new Date(y,m-1,d+7*n);
+  else if(histMode==='month')x=new Date(y,m-1+n,1);
+  else x=new Date(y+n,0,1);
+  histISO=dayKey(x);renderHist();
+}
+$('hPrev').onclick=()=>shiftPeriod(-1);
+$('hNext').onclick=()=>shiftPeriod(1);
+$('hToday').onclick=()=>{histISO=dayKey(new Date());renderHist();};
+$('hmode').onclick=e=>{
+  const b=e.target.closest('button[data-m]');if(!b)return;
+  histMode=b.dataset.m;
+  document.querySelectorAll('#hmode button').forEach(x=>x.classList.toggle('on',x===b));
+  renderHist();
+};
+$('hdate').onchange=()=>{
+  const txt=$('hdate').value.trim();
+  if(txt){
+    const p=txt.split(/\s+/).map(Number);
+    if(p.length===3&&p.every(Number.isInteger)){
+      let [d,mo,y]=p;
+      if(y<100)y+=2000;
+      const x=new Date(y,mo-1,d);
+      if(x.getFullYear()===y&&x.getMonth()===mo-1&&x.getDate()===d)histISO=dayKey(x);
+      else alert('Ngày không hợp lệ');
+    }else alert('Nhập theo mẫu: ngày tháng năm, ví dụ 15 2 26');
+  }
+  renderHist();
+};
+function renderHist(){
+  updateHint();
+  const day=histISO;
+  $('hdate').value=toDMY(day);
+  $('hday').textContent=periodLabel(day,histMode);
+  const [rs,re]=rangeOf(day,histMode);
+  const orders=db.orders.filter(o=>{const t=new Date(o.time);return t>=rs&&t<re;}).sort((a,b)=>b.time.localeCompare(a.time));
+  const sumBy=mt=>orders.filter(o=>o.method===mt).reduce((s,o)=>s+o.total,0);
+  $('hcount').textContent=orders.length;
+  $('hcash').textContent=money(sumBy('cash'));
+  $('hbank').textContent=money(sumBy('bank'));
+  $('hrev').textContent=money(orders.reduce((s,o)=>s+o.total,0));
+  $('hlist').innerHTML=orders.map(o=>`<div class="card">
+    <div class="line" style="border:0"><b>${new Date(o.time).toLocaleString('vi-VN',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit',year:'numeric'})}</b><b>${money(o.total)}</b></div>
+    ${o.code||o.info?`<div style="font-size:14px">${o.code?esc(o.code):''}${o.info?' · '+esc(o.info):''}</div>`:''}
+    <div class="muted">${o.items.map(i=>esc(i.name)+' x'+i.qty).join(', ')}</div>
+    <div class="muted">Hình thức: ${methodName(o.method)}${o.discAmt?' · Giảm '+money(o.discAmt):''}${o.vat?' · VAT '+money(o.vat):''}</div>
+    <div style="text-align:right;margin-top:6px"><button class="danger" data-del="${o.id}">Xóa đơn</button></div>
+  </div>`).join('');
+}
+$('hlist').onclick=e=>{
+  const id=e.target.dataset.del;
+  if(id&&confirm('Xóa đơn này khỏi lịch sử? Doanh thu sẽ giảm.')){
+    db.orders=db.orders.filter(o=>o.id!==id);save();renderHist();
+  }
+};
+
+// Sao lưu / khôi phục
+$('exp').onclick=()=>{
+  const blob=new Blob([JSON.stringify(db,null,2)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);a.download='banhang-'+dayKey(new Date())+'.json';
+  document.body.appendChild(a);a.click();a.remove();
+};
+$('imp').onchange=async e=>{
+  const f=e.target.files[0];if(!f)return;
+  try{
+    const data=JSON.parse(await f.text());
+    if(!Array.isArray(data.products)||!Array.isArray(data.orders))throw new Error('bad');
+    if(!confirm('Thay toàn bộ dữ liệu hiện tại bằng file này?'))return;
+    db=data;save();renderProducts();renderPick();renderHist();loadBankForm();
+    alert('Đã nhập dữ liệu');
+  }catch(err){alert('File không hợp lệ');}
+  finally{e.target.value='';}
+};
+
+renderPick();renderCart();renderProducts();renderHist();loadBankForm();resetExtra();updateHint();
+</script>
+</body>
+</html>
