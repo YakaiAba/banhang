@@ -13,6 +13,12 @@ body{margin:0;font-family:-apple-system,system-ui,sans-serif;background:#f4f4f6;
 header{background:#f26a1b;color:#fff;padding:14px 16px;font-size:18px;font-weight:600;position:sticky;top:0;z-index:5;display:flex;justify-content:space-between;align-items:center;gap:8px}
 .syncdot{font-size:12px;font-weight:500;background:rgba(255,255,255,.2);padding:3px 8px;border-radius:10px;white-space:nowrap}
 .syncdot:empty{display:none}
+#appTitle{min-width:0;overflow:hidden;font-size:17px;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.devname{font-weight:500;font-size:15px;white-space:nowrap}
+.pager{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:8px}
+.pager button.on{background:#f26a1b;color:#fff;border-color:#f26a1b}
+#glist table.tb td,#glist table.tb th{text-align:center}
+#glist table.tb td:first-child,#glist table.tb th:first-child{text-align:left}
 main{padding:12px;max-width:900px;margin:0 auto}
 .tab{display:none}.tab.on{display:block}
 nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:#fff;border-top:1px solid #ddd;padding-bottom:env(safe-area-inset-bottom);z-index:6}
@@ -67,7 +73,7 @@ table.tb th:first-child,table.tb td:first-child{text-align:left}
 <style id="pageStyle">@page{size:58mm auto;margin:2mm}</style>
 </head>
 <body>
-<header><span>Bán hàng</span><span id="syncDot" class="syncdot"></span></header>
+<header><span id="appTitle">Bán hàng</span><span id="syncDot" class="syncdot"></span></header>
 <main>
  <!-- ===== BÁN HÀNG ===== -->
  <section class="tab on" id="t-sell">
@@ -116,8 +122,15 @@ table.tb th:first-child,table.tb td:first-child{text-align:left}
    <div class="field"><label>Mã vạch</label>
     <div class="row" style="margin:0"><input id="pbar" inputmode="numeric"><button id="scanProd">Quét</button></div>
    </div>
+   <div class="field"><label>Nhóm sản phẩm</label><select id="pgroup"></select></div>
    <input type="hidden" id="pid">
    <div class="row"><button class="primary" id="psave">Lưu sản phẩm</button><button id="preset">Xóa form</button></div>
+  </div>
+  <div class="card">
+   <h3>Thêm nhóm sản phẩm</h3>
+   <div class="row" style="margin:0"><input id="gname" maxlength="40" placeholder="Tên nhóm, ví dụ: Truyện"><button id="gsave" class="green" style="width:auto;flex:none;white-space:nowrap">Thêm nhóm</button></div>
+   <button id="gcancel" class="sm" style="display:none;margin-top:6px">Hủy sửa</button>
+   <div id="glist" style="margin-top:10px"></div>
   </div>
   <input id="psearch" placeholder="Tìm trong danh sách sản phẩm" style="margin-bottom:10px">
   <div id="plist"></div>
@@ -261,8 +274,9 @@ table.tb th:first-child,table.tb td:first-child{text-align:left}
 <div id="printArea"></div>
 
 <script>
-const APP_VER='2.0 (30/10/2026)';
+const APP_VER='2.1 (30/10/2026)';
 const KEY='banhang.v1', LOCAL='banhang.local', SYNC='banhang.sync';
+const LISTS=['products','orders','stockIns','groups'];
 const $=id=>document.getElementById(id);
 const money=n=>Math.round(+n||0).toLocaleString('vi-VN')+'đ';
 const fmtNum=n=>Math.round(+n||0).toLocaleString('vi-VN');
@@ -280,7 +294,7 @@ const norm=s=>String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/đ/
 let db;
 try{db=JSON.parse(localStorage.getItem(KEY)||'null');}catch(e){db=null;}
 if(!db||typeof db!=='object')db={};
-['products','orders','stockIns'].forEach(k=>{if(!Array.isArray(db[k]))db[k]=[];});
+LISTS.forEach(k=>{if(!Array.isArray(db[k]))db[k]=[];});
 if(db.bank&&!db.bank.updated)db.bank.updated=1;
 if(!db.shop)db.shop={};
 let local={};try{local=JSON.parse(localStorage.getItem(LOCAL)||'{}');}catch(e){local={};}
@@ -307,10 +321,13 @@ const LOW=3;
 function stockOf(p,m){return p.track?((m||stockMap())[p.id]||0):null;}
 
 /* ================= MÃ ĐƠN ================= */
-function devTag(){
-  const n=norm(local.device||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
-  return n.slice(0,8);
+function tagOf(name){
+  const w=norm(name||'').toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean);
+  const full=w.join('');
+  if(full.length<=8)return full;
+  return w.map(x=>/^\d+$/.test(x)?x:x[0]).join('').slice(0,8);
 }
+function devTag(){return tagOf(local.device);}
 function nextCode(){
   const today=dayKey(new Date()),tag=devTag();
   const pre=tag?'DH-'+tag+'-':'DH';
@@ -490,7 +507,7 @@ $('pay').onclick=()=>{
   if(!editingId&&!local.device&&!local.askedDevice){
     local.askedDevice=1;saveLocal();
     const n=prompt('Đặt tên cho máy này để mã đơn không trùng giữa các máy (ví dụ: iPhone, iPad, Phú). Có thể đổi sau trong Cài đặt.','');
-    if(n&&n.trim()){local.device=n.trim().slice(0,20);saveLocal();}
+    if(n&&n.trim()){local.device=n.trim().slice(0,20);saveLocal();renderTitle();}
   }
   const t=calc();
   const info=$('orderInfo').value.trim();
@@ -668,12 +685,14 @@ function renderProducts(){
     const parts=[money(p.price)];
     if(hasNum(p.cost))parts.push('vốn '+money(p.cost));
     if(s!==null)parts.push(s<=LOW?`<span class="warn">tồn ${s}</span>`:'tồn '+s);
+    const gl=groupLabel(p);if(gl)parts.push('nhóm '+esc(gl));
     if(p.barcode)parts.push(esc(p.barcode));
     return `<div class="card line"><div style="flex:1;min-width:0"><b>${esc(p.name)}</b><div class="muted">${parts.join(' · ')}</div></div><button class="sm" data-e="${p.id}">Sửa</button> <button class="sm danger" data-x="${p.id}">Xóa</button></div>`;
   }).join(''):'<p class="muted">'+(q?'Không tìm thấy sản phẩm.':'Chưa có sản phẩm.')+'</p>';
   const low=prods().filter(p=>p.track&&(sm[p.id]||0)<=LOW).sort((a,b)=>(sm[a.id]||0)-(sm[b.id]||0));
   $('lowCard').style.display=low.length?'':'none';
   $('lowList').innerHTML=low.map(p=>`<div class="line"><span>${esc(p.name)}</span><b class="warn">${sm[p.id]||0}</b></div>`).join('');
+  fillGroupSel();renderGroups();
 }
 $('psearch').oninput=renderProducts;
 $('plist').onclick=e=>{
@@ -685,6 +704,7 @@ $('plist').onclick=e=>{
     $('pstock').value=p.track?fmtNum(stockOf(p)):'';
     if(p.track&&stockOf(p)<0)$('pstock').value='-'+fmtNum(-stockOf(p));
     $('pbar').value=p.barcode||'';
+    fillGroupSel(validGroup(p.group));
     window.scrollTo(0,0);
   }
   if(x){
@@ -694,7 +714,7 @@ $('plist').onclick=e=>{
     }
   }
 };
-function resetPForm(){['pid','pname','pprice','pcost','pstock','pbar'].forEach(id=>$(id).value='');}
+function resetPForm(){['pid','pname','pprice','pcost','pstock','pbar'].forEach(id=>$(id).value='');fillGroupSel('');}
 $('preset').onclick=resetPForm;
 $('psave').onclick=()=>{
   const name=$('pname').value.trim(),barcode=$('pbar').value.trim();
@@ -708,6 +728,7 @@ $('psave').onclick=()=>{
   let p=id?findP(id):null;
   if(!p){p={id:uid(),name,price,barcode};db.products.push(p);}
   Object.assign(p,{name,price,barcode});
+  const grp=$('pgroup').value;if(grp)p.group=grp;else delete p.group;
   if(cost===null)delete p.cost;else p.cost=cost;
   if(stockTxt!==''&&hasNum(stockTxt)){
     const want=(stockTxt.startsWith('-')?-1:1)*numOf(stockTxt);
@@ -719,6 +740,72 @@ $('psave').onclick=()=>{
     if(confirm('Bỏ theo dõi tồn kho của sản phẩm này?'))p.track=false;
   }
   touch(p);save();resetPForm();renderProducts();renderPick();
+};
+
+/* ================= NHÓM SẢN PHẨM ================= */
+// Nhóm "Không" (mặc định) và "Khác" có sẵn; các nhóm khác do bạn thêm, xếp theo ABC.
+const GKHAC='khac';
+let gEditId=null,gExpanded=false,gPage=1;
+const groupsSorted=()=>db.groups.filter(g=>!g.deleted).sort((a,b)=>a.name.localeCompare(b.name,'vi'));
+function validGroup(id){if(id===GKHAC)return GKHAC;return id&&db.groups.some(g=>g.id===id&&!g.deleted)?id:'';}
+function groupLabel(p){const v=validGroup(p.group);if(v===GKHAC)return 'Khác';if(!v)return '';return db.groups.find(g=>g.id===v).name;}
+function fillGroupSel(sel){
+  const el=$('pgroup');const cur=sel===undefined?el.value:sel;
+  el.innerHTML='<option value="">Không</option>'+groupsSorted().map(g=>`<option value="${g.id}">${esc(g.name)}</option>`).join('')+'<option value="khac">Khác</option>';
+  el.value=validGroup(cur);
+}
+function groupCounts(){const c={};prods().forEach(p=>{const v=validGroup(p.group);c[v]=(c[v]||0)+1;});return c;}
+function renderGroups(){
+  const gs=groupsSorted(),cnt=groupCounts();
+  const SHORT=10,PER=30;
+  let html='';
+  if(!gs.length)html='<p class="muted" style="margin:0">Chưa có nhóm nào.</p>';
+  else{
+    const pages=Math.ceil(gs.length/PER);
+    if(gPage>pages)gPage=pages;
+    const rows=gExpanded?gs.slice((gPage-1)*PER,gPage*PER):gs.slice(0,SHORT);
+    html=`<table class="tb"><tr><th>Tên nhóm</th><th>Số lượng</th><th>Sửa</th><th>Xóa</th></tr>${rows.map(g=>`<tr><td>${esc(g.name)}</td><td>${cnt[g.id]||0}</td><td><button class="sm" data-ge="${g.id}">Sửa</button></td><td><button class="sm danger" data-gx="${g.id}">Xóa</button></td></tr>`).join('')}</table>`;
+    if(!gExpanded&&gs.length>SHORT)html+=`<button class="sm" data-gmore="1" style="width:100%;margin-top:8px">Xem thêm (còn ${gs.length-SHORT} nhóm)</button>`;
+    if(gExpanded){
+      if(pages>1){html+='<div class="pager">';for(let i=1;i<=pages;i++)html+=`<button class="sm${i===gPage?' on':''}" data-gp="${i}">${i}</button>`;html+='</div>';}
+      html+=`<button class="sm" data-gless="1" style="width:100%;margin-top:8px">Thu gọn</button>`;
+    }
+  }
+  const other=[];
+  if(cnt[''])other.push('Không: '+cnt['']);
+  if(cnt[GKHAC])other.push('Khác: '+cnt[GKHAC]);
+  if(other.length)html+=`<p class="muted" style="margin:8px 0 0">Sản phẩm chưa phân nhóm — ${other.join(' · ')}</p>`;
+  $('glist').innerHTML=html;
+}
+function endGroupEdit(){gEditId=null;$('gname').value='';$('gsave').textContent='Thêm nhóm';$('gcancel').style.display='none';}
+$('gcancel').onclick=endGroupEdit;
+$('gname').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('gsave').click();}});
+$('gsave').onclick=()=>{
+  const name=$('gname').value.trim().replace(/\s+/g,' ');
+  if(!name)return alert('Nhập tên nhóm');
+  const k=norm(name);
+  if(k==='khong'||k==='khac')return alert('Nhóm "Không" và "Khác" đã có sẵn, hãy đặt tên khác.');
+  if(groupsSorted().some(g=>norm(g.name)===k&&g.id!==gEditId))return alert('Đã có nhóm "'+name+'".');
+  if(gEditId){const g=db.groups.find(x=>x.id===gEditId);if(g){g.name=name;touch(g);}}
+  else db.groups.push(touch({id:uid(),name}));
+  endGroupEdit();save();renderProducts();
+};
+$('glist').onclick=e=>{
+  const d=e.target.dataset||{};
+  if(d.gmore){gExpanded=true;gPage=1;renderGroups();}
+  else if(d.gless){gExpanded=false;renderGroups();}
+  else if(d.gp){gPage=+d.gp;renderGroups();}
+  else if(d.ge){
+    const g=db.groups.find(x=>x.id===d.ge);if(!g)return;
+    gEditId=g.id;$('gname').value=g.name;$('gsave').textContent='Lưu tên';$('gcancel').style.display='';$('gname').focus();
+  }
+  else if(d.gx){
+    const g=db.groups.find(x=>x.id===d.gx);if(!g)return;
+    const n=groupCounts()[g.id]||0;
+    if(!confirm('Xóa nhóm "'+g.name+'"?'+(n?'\n'+n+' sản phẩm trong nhóm sẽ chuyển về "Không".':'')))return;
+    g.deleted=true;touch(g);if(gEditId===g.id)endGroupEdit();
+    save();renderProducts();
+  }
 };
 
 /* ================= QUÉT MÃ ================= */
@@ -1003,17 +1090,17 @@ function loadSettings(){
   loadBankForm();
   $('appVer').textContent='Phiên bản '+APP_VER;
 }
-$('devName').oninput=()=>{const t=norm($('devName').value).toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,8);$('devHint').textContent='Mã đơn sẽ có dạng: '+(t?'DH-'+t+'-001':'DH001');};
+$('devName').oninput=()=>{const t=tagOf($('devName').value);$('devHint').textContent='Mã đơn sẽ có dạng: '+(t?'DH-'+t+'-001':'DH001');};
 $('devSave').onclick=()=>{
   const n=$('devName').value.trim();
-  const t=norm(n).toUpperCase().replace(/[^A-Z0-9]/g,'');
+  const t=tagOf(n);
   if(n&&!t)return alert('Tên máy cần có ít nhất 1 chữ hoặc số');
   local.device=n.slice(0,20);local.paper=$('paper').value;saveLocal();
-  updateHint();loadSettings();alert('Đã lưu');
+  updateHint();loadSettings();renderTitle();alert('Đã lưu');
 };
 $('shopSave').onclick=()=>{
   db.shop=touch({name:$('shopName').value.trim(),addr:$('shopAddr').value.trim(),phone:$('shopPhone').value.trim(),foot:$('shopFoot').value.trim(),updated:(db.shop||{}).updated});
-  save();alert('Đã lưu thông tin cửa hàng');
+  save();renderTitle();alert('Đã lưu thông tin cửa hàng');
 };
 let tmpQR;
 function showQRPrev(src){
@@ -1082,7 +1169,7 @@ $('imp').onchange=async e=>{
     const data=JSON.parse(await f.text());
     if(!Array.isArray(data.products)||!Array.isArray(data.orders))throw new Error('bad');
     if(!confirm('Gộp dữ liệu trong file ('+data.products.length+' sản phẩm, '+data.orders.length+' đơn) vào dữ liệu đang có?'))return;
-    ['products','orders','stockIns'].forEach(k=>mergeArr(db[k],(data[k]||[]).map(r=>({...r,updated:r.updated||1})),true));
+    LISTS.forEach(k=>mergeArr(db[k],(data[k]||[]).map(r=>({...r,updated:r.updated||1})),true));
     ['shop','bank'].forEach(k=>{if(data[k]&&(!db[k]||!db[k].updated||(data[k].updated||1)>(db[k].updated||0)))db[k]={...data[k],updated:Math.max(data[k].updated||1,(db[k]&&db[k].updated||0)+1),_l:1};});
     save();renderAll();alert('Đã nhập dữ liệu');
   }catch(err){alert('File không hợp lệ');}
@@ -1094,7 +1181,7 @@ $('imp').onchange=async e=>{
 let cfg={};try{cfg=JSON.parse(localStorage.getItem(SYNC)||'{}');}catch(e){cfg={};}
 let syncing=false,again=false,syncTimer=null,retryN=0;
 const saveCfg=()=>localStorage.setItem(SYNC,JSON.stringify(cfg));
-function dirtyCount(){return ['products','orders','stockIns'].reduce((s,k)=>s+db[k].filter(r=>r._l).length,0)+(db.shop&&db.shop._l?1:0)+(db.bank&&db.bank._l?1:0);}
+function dirtyCount(){return LISTS.reduce((s,k)=>s+db[k].filter(r=>r._l).length,0)+(db.shop&&db.shop._l?1:0)+(db.bank&&db.bank._l?1:0);}
 function renderSync(){
   const dot=$('syncDot');
   if(!cfg.url){dot.textContent='';$('syncInfo').textContent='Chưa kết nối. Dữ liệu chỉ nằm trong máy này.';$('syncInfo').style.color='#c62828';return;}
@@ -1103,6 +1190,7 @@ function renderSync(){
   const n=dirtyCount();let msg,col='';
   if(cfg.err==='wrong_key'){dot.textContent='⚠ Sai mã';msg='Mã bí mật không khớp với mã trong Apps Script.';col='#c62828';}
   else if(cfg.err==='old_script'){dot.textContent='⚠ Cần cập nhật';msg='Apps Script đang là bản cũ. Dán Code.gs mới và triển khai phiên bản mới.';col='#c62828';}
+  else if(cfg.warn==='old_groups'&&!syncing){dot.textContent='⚠ Cần cập nhật';msg='Apps Script đang là bản cũ nên nhóm sản phẩm chưa đồng bộ sang máy khác (dữ liệu khác vẫn đồng bộ bình thường). Dán Code.gs mới và triển khai phiên bản mới.';col='#c62828';}
   else if(syncing){dot.textContent='⏳ Đang lưu';msg='Đang đồng bộ…';}
   else if(n){dot.textContent='⏳ Chờ gửi';msg=n+' thay đổi chưa gửi'+(cfg.err==='busy'?' (Google đang bận, app tự thử lại)':cfg.err?' ('+cfg.err+', app tự thử lại)':'')+'. Lần đồng bộ gần nhất: '+last+'.';col=cfg.err?'#c62828':'';}
   else{dot.textContent='☁ Đã lưu';msg='Đã đồng bộ lúc '+last+'.';col='#2e7d32';}
@@ -1127,7 +1215,7 @@ async function sync(){
   syncing=true;again=false;renderSync();
   // Gom các thay đổi của máy này
   const changes={},sent=[];
-  ['products','orders','stockIns'].forEach(k=>{changes[k]=db[k].filter(r=>r._l).map(r=>{sent.push([k,r.id,r.updated]);return strip(r);});});
+  LISTS.forEach(k=>{changes[k]=db[k].filter(r=>r._l).map(r=>{sent.push([k,r.id,r.updated]);return strip(r);});});
   ['shop','bank'].forEach(k=>{if(db[k]&&db[k]._l){changes[k]=strip(db[k]);sent.push([k,null,db[k].updated]);}});
   let ok=false;
   try{
@@ -1135,7 +1223,7 @@ async function sync(){
     if(res.ok&&res.changes){
       const rc=res.changes;
       // Nhận dữ liệu từ máy khác (giữ bản trong máy nếu nó mới hơn và chưa gửi)
-      ['products','orders','stockIns'].forEach(k=>{
+      LISTS.forEach(k=>{
         const map=new Map(db[k].map((r,i)=>[r.id,i]));
         (rc[k]||[]).forEach(r=>{const i=map.get(r.id);
           if(i==null){db[k].push(r);map.set(r.id,db[k].length-1);}
@@ -1144,22 +1232,24 @@ async function sync(){
       });
       ['shop','bank'].forEach(k=>{const r=rc[k];if(r&&!(db[k]&&db[k]._l&&(db[k].updated||0)>(r.updated||0)))db[k]=r;});
       // Bỏ dấu "chưa gửi" của các bản ghi đã gửi và chưa bị sửa thêm
-      sent.forEach(([k,id,u])=>{const r=id?db[k].find(x=>x.id===id):db[k];if(r&&r.updated===u)delete r._l;});
+      const oldSrv=(res.v||0)<3; // Apps Script cũ chưa lưu nhóm sản phẩm
+      sent.forEach(([k,id,u])=>{if(k==='groups'&&oldSrv)return;const r=id?db[k].find(x=>x.id===id):db[k];if(r&&r.updated===u)delete r._l;});
+      cfg.warn=oldSrv&&db.groups.some(g=>g._l)?'old_groups':'';
       cfg.cursor=res.cursor;cfg.err='';cfg.last=new Date().toISOString();ok=true;
       persist();
-      if((rc.products||[]).length||(rc.orders||[]).length||(rc.stockIns||[]).length||rc.shop||rc.bank)renderAll(true);
+      if(LISTS.some(k=>(rc[k]||[]).length)||rc.shop||rc.bank)renderAll(true);
     }else if(res.ok){cfg.err='old_script';}
     else cfg.err=res.err||'lỗi';
   }catch(e){cfg.err=navigator.onLine?'không kết nối được':'mất mạng';}
   syncing=false;saveCfg();renderSync();
-  if(ok){retryN=0;if(again||dirtyCount())setTimeout(sync,500);}
+  if(ok){retryN=0;if(again)setTimeout(sync,500);}
   else if(cfg.err!=='wrong_key'&&cfg.err!=='old_script'){
     clearTimeout(syncTimer);syncTimer=setTimeout(sync,[5,15,30,60][Math.min(retryN++,3)]*1000);
   }
   return ok;
 }
 function markAllLocal(){
-  ['products','orders','stockIns'].forEach(k=>db[k].forEach(r=>{if(!r.updated)r.updated=1;r._l=1;}));
+  LISTS.forEach(k=>db[k].forEach(r=>{if(!r.updated)r.updated=1;r._l=1;}));
   ['shop','bank'].forEach(k=>{if(db[k]&&Object.keys(db[k]).some(x=>x!=='updated'&&x!=='_l')){if(!db[k].updated)db[k].updated=1;db[k]._l=1;}});
   persist();
 }
@@ -1198,9 +1288,17 @@ document.addEventListener('visibilitychange',()=>{if(document.visibilityState===
 // Mỗi phút lấy dữ liệu mới từ máy kia
 setInterval(()=>{if(cfg.url&&!syncing&&document.visibilityState==='visible')sync();},60000);
 
+/* ================= TIÊU ĐỀ ================= */
+function renderTitle(){
+  const shop=((db.shop&&db.shop.name)||'').trim()||'Bán hàng';
+  const dev=(local.device||'').trim();
+  $('appTitle').innerHTML=esc(shop)+(dev?'<span class="devname"> - '+esc(dev)+'</span>':'');
+  document.title=shop;
+}
+
 /* ================= KHỞI ĐỘNG ================= */
 function renderAll(fromSync){
-  renderPick();renderProducts();updateHint();
+  renderTitle();renderPick();renderProducts();updateHint();
   if($('t-hist').classList.contains('on'))renderHist();
   if(!fromSync&&$('t-set').classList.contains('on'))loadSettings(); // không ghi đè ô đang gõ khi dữ liệu về từ máy kia
   renderBackupInfo();renderSync();
