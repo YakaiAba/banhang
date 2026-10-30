@@ -223,6 +223,22 @@ table.tb th:first-child,table.tb td:first-child{text-align:left}
    <button class="primary" id="devSave" style="margin-top:10px">Lưu</button>
   </div>
   <div class="card">
+   <h3>Thiết lập quét</h3>
+   <label>Kiểu quét (riêng từng máy)</label>
+   <select id="scanType">
+    <option value="bar">Chỉ mã vạch (không đọc mã QR)</option>
+    <option value="qr">Chỉ mã QR</option>
+    <option value="all">Cả mã vạch và mã QR</option>
+   </select>
+   <p class="muted" style="margin:6px 0 0">Nếu hay quét nhầm mã QR trên bao bì hoặc tem, để "Chỉ mã vạch".</p>
+   <button class="primary" id="scanSave" style="margin-top:10px">Lưu</button>
+  </div>
+  <div class="card">
+   <h3>Quản lý sử dụng</h3>
+   <p class="muted" id="useInfo" style="margin:0 0 10px"></p>
+   <button class="primary" id="useOpen">Xem lịch sử thao tác</button>
+  </div>
+  <div class="card">
    <h3>Thông tin cửa hàng (in trên hóa đơn)</h3>
    <label>Tên cửa hàng</label><input id="shopName">
    <label>Địa chỉ</label><input id="shopAddr">
@@ -381,12 +397,26 @@ table.tb th:first-child,table.tb td:first-child{text-align:left}
  </div>
 </div>
 
+<div class="overlay dim hide" id="useModal" style="z-index:30">
+ <div class="card modal" style="max-width:640px;text-align:left">
+  <div class="row" style="margin:0 0 8px"><b style="flex:1;font-size:17px">Quản lý sử dụng</b><button class="sm" id="useClose">Đóng</button></div>
+  <div class="row" style="margin:0 0 8px;gap:6px">
+   <select id="useDev" style="flex:1;min-width:0"></select>
+   <select id="usePeriod" style="flex:1;min-width:0"><option value="today">Hôm nay</option><option value="7" selected>7 ngày</option><option value="30">30 ngày</option><option value="90">90 ngày</option></select>
+  </div>
+  <select id="useCat" style="margin-bottom:10px"><option value="*">Tất cả thao tác</option><option value="order">Đơn hàng</option><option value="prod">Sản phẩm và kho</option><option value="tag">Mã và tem</option><option value="sys">Cài đặt và dữ liệu</option></select>
+  <div id="useSum"></div>
+  <div id="useList"></div>
+  <p class="muted" id="useNote" style="margin:10px 0 0"></p>
+ </div>
+</div>
+
 <div id="printArea"></div>
 
 <script>
-const APP_VER='2.6 (30/10/2026)';
+const APP_VER='2.8 (30/10/2026)';
 const KEY='banhang.v1', LOCAL='banhang.local', SYNC='banhang.sync';
-const LISTS=['products','orders','stockIns','groups'];
+const LISTS=['products','orders','stockIns','groups','logs'];
 const $=id=>document.getElementById(id);
 const money=n=>Math.round(+n||0).toLocaleString('vi-VN')+'đ';
 const fmtNum=n=>Math.round(+n||0).toLocaleString('vi-VN');
@@ -779,6 +809,7 @@ function finishPay(method,extra){
     db.orders.push(o);
   }
   const wasEdit=!!editingId;
+  logAct('order',wasEdit?'order_edit':'sell',(wasEdit?'Sửa đơn ':'Bán đơn ')+code+' · '+money(t.total)+' · '+methodName(method)+(method==='debt'&&extra.customer?' · khách '+extra.customer:'')+' · '+items.length+' dòng hàng',o.id);
   save();
   pending=null;
   $('payModal').classList.add('hide');
@@ -824,6 +855,7 @@ async function collect(method){
   if(a>left)return alert('Số tiền thu lớn hơn số còn nợ ('+money(left)+').');
   if(!await askConfirm('',{title:'Xác nhận thu nợ',html:sumRow('Khách',esc(o.customer||o.info||''))+sumRow('Còn nợ',money(left))+sumRow('Thu ('+methodName(method)+')',money(a),'font-weight:700')+sumRow('Còn lại',money(left-a),'font-weight:700;color:'+(left-a?'#c62828':'#2e7d32')),ok:'Đã thu tiền'}))return;
   o.payments=(o.payments||[]).concat([{id:uid(),time:new Date().toISOString(),amount:a,method,by:local.device||''}]);
+  logAct('order','debt_pay','Thu nợ đơn '+(o.code||'')+' · '+money(a)+' · '+methodName(method)+(o.customer?' · khách '+o.customer:''),o.id);
   touch(o);save();
   $('collectModal').classList.add('hide');
   if($('t-hist').classList.contains('on'))renderHist();
@@ -1021,7 +1053,7 @@ async function prodClick(e){
   if(d.x){
     const p=findP(d.x);
     if(p&&await askConfirm('Xóa sản phẩm "'+p.name+'"? Các đơn cũ vẫn giữ nguyên.')){
-      p.deleted=true;touch(p);save();renderProducts();renderPick();
+      p.deleted=true;touch(p);logAct('prod','prod_del','Xóa sản phẩm "'+p.name+'"');save();renderProducts();renderPick();
     }
   }
 }
@@ -1039,6 +1071,7 @@ $('psave').onclick=async()=>{
   const cost=hasNum($('pcost').value)?numOf($('pcost').value):null;
   const stockTxt=$('pstock').value.trim();
   let p=id?findP(id):null;
+  const isNew=!p;
   if(!p){p={id:uid(),name,price,barcode};db.products.push(p);}
   Object.assign(p,{name,price,barcode});
   const grp=$('pgroup').value;if(grp)p.group=grp;else delete p.group;
@@ -1048,10 +1081,11 @@ $('psave').onclick=async()=>{
     const cur=p.track?stockOf(p):(stockMap()[p.id]||0);
     if(!p.track)p.track=true;
     const delta=want-cur;
-    if(delta!==0)db.stockIns.push(touch({id:uid(),pid:p.id,qty:delta,time:new Date().toISOString(),note:'Điều chỉnh tồn kho',by:local.device||''}));
+    if(delta!==0){db.stockIns.push(touch({id:uid(),pid:p.id,qty:delta,time:new Date().toISOString(),note:'Điều chỉnh tồn kho',by:local.device||''}));logAct('prod','stock_adj','Điều chỉnh tồn kho "'+name+'": '+fmtNum(cur)+' → '+fmtNum(want));}
   }else if(stockTxt===''&&p.track&&id){
     if(await askConfirm('Bỏ theo dõi tồn kho của sản phẩm này?'))p.track=false;
   }
+  logAct('prod',isNew?'prod_add':'prod_edit',(isNew?'Thêm sản phẩm "':'Sửa sản phẩm "')+name+'" · '+money(price)+(barcode?' · mã '+barcode:''));
   touch(p);save();resetPForm();renderProducts();renderPick();
 };
 
@@ -1116,8 +1150,8 @@ $('gsave').onclick=()=>{
   const k=norm(name);
   if(k==='khong'||k==='khac')return alert('Nhóm "Không" và "Khác" đã có sẵn, hãy đặt tên khác.');
   if(groupsSorted().some(g=>norm(g.name)===k&&g.id!==gEditId))return alert('Đã có nhóm "'+name+'".');
-  if(gEditId){const g=db.groups.find(x=>x.id===gEditId);if(g){g.name=name;touch(g);}}
-  else db.groups.push(touch({id:uid(),name}));
+  if(gEditId){const g=db.groups.find(x=>x.id===gEditId);if(g){logAct('prod','group_edit','Đổi tên nhóm "'+g.name+'" → "'+name+'"');g.name=name;touch(g);}}
+  else{db.groups.push(touch({id:uid(),name}));logAct('prod','group_add','Thêm nhóm "'+name+'"');}
   endGroupEdit();save();renderProducts();
 };
 async function groupClick(e){
@@ -1140,7 +1174,7 @@ async function groupClick(e){
     const g=db.groups.find(x=>x.id===d.gx);if(!g)return;
     const n=groupCounts()[g.id]||0;
     if(!await askConfirm('Xóa nhóm "'+g.name+'"?'+(n?'\n'+n+' sản phẩm trong nhóm sẽ chuyển về "Không".':'')))return;
-    g.deleted=true;touch(g);if(gEditId===g.id)endGroupEdit();if(gSel===g.id)gSel=null;
+    g.deleted=true;touch(g);logAct('prod','group_del','Xóa nhóm "'+g.name+'"');if(gEditId===g.id)endGroupEdit();if(gSel===g.id)gSel=null;
     save();renderProducts();
   }
 }
@@ -1150,33 +1184,45 @@ $('gsres').onclick=groupClick;
 /* ================= QUÉT MÃ ================= */
 let scanMode='',scanStream=null,scanTimer=null,scanBusy=false,detector=null,lastHit='',hitCount=0;
 const FORMATS=['ean_13','ean_8','upc_a','upc_e','code_128','code_39','qr_code'];
+const BAR_FORMATS=FORMATS.filter(x=>x!=='qr_code');
+const scanKey=()=>local.scan==='qr'||local.scan==='all'?local.scan:'bar'; // mặc định: chỉ mã vạch
+const fmtsFor=k=>k==='qr'?['qr_code']:k==='all'?FORMATS:BAR_FORMATS;
 const BD_URL='https://cdn.jsdelivr.net/npm/barcode-detector@2/dist/es/pure.min.js';
 const scanCanvas=document.createElement('canvas');
 const scanCtx=scanCanvas.getContext('2d',{willReadFrequently:true});
 function scanMsg(t){$('scanMsg').textContent=t;}
 function loadScript(src){return new Promise((ok,no)=>{const s=document.createElement('script');s.src=src;s.onload=ok;s.onerror=no;document.head.appendChild(s);});}
-async function getDetector(){
-  if(detector)return detector;
+const dets={};
+async function getDetector(k){
+  if(dets[k])return dets[k];
+  const want=fmtsFor(k),need=k==='qr'?'qr_code':'ean_13';
   try{
     if('BarcodeDetector' in window){
       const sup=await window.BarcodeDetector.getSupportedFormats();
-      const f=FORMATS.filter(x=>sup.includes(x));
-      if(f.includes('ean_13')){const d=new window.BarcodeDetector({formats:f});detector={detect:c=>d.detect(c)};return detector;}
+      const f=want.filter(x=>sup.includes(x));
+      if(f.includes(need)){const d=new window.BarcodeDetector({formats:f});return dets[k]={detect:c=>d.detect(c)};}
     }
   }catch(e){}
   try{
     const m=await import(BD_URL);
-    const d=new m.BarcodeDetector({formats:FORMATS});
-    detector={detect:c=>d.detect(c)};return detector;
+    const d=new m.BarcodeDetector({formats:want});
+    return dets[k]={detect:c=>d.detect(c)};
   }catch(e){}
   await loadScript('https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js');
+  const BF=ZXing.BarcodeFormat,map={ean_13:BF.EAN_13,ean_8:BF.EAN_8,upc_a:BF.UPC_A,upc_e:BF.UPC_E,code_128:BF.CODE_128,code_39:BF.CODE_39,qr_code:BF.QR_CODE};
   const hints=new Map();hints.set(ZXing.DecodeHintType.TRY_HARDER,true);
+  hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS,want.map(x=>map[x]));
   const r=new ZXing.MultiFormatReader();r.setHints(hints);
-  detector={detect:async c=>{
-    try{const bmp=new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(new ZXing.HTMLCanvasElementLuminanceSource(c)));return [{rawValue:r.decode(bmp).getText()}];}
+  return dets[k]={detect:async c=>{
+    try{const bmp=new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(new ZXing.HTMLCanvasElementLuminanceSource(c)));
+      const o=r.decode(bmp);return [{rawValue:o.getText(),format:o.getBarcodeFormat()===BF.QR_CODE?'qr_code':'other'}];}
     catch(e){return [];}
   }};
-  return detector;
+}
+// Giữ lại đúng loại mã theo kiểu quét đã chọn
+function keepByType(res){
+  const k=scanKey();
+  return res.filter(r=>{const q=r.format==='qr_code';return k==='all'||(k==='qr'?q:!q);});
 }
 // Âm thanh "bíp" kiểu máy quét siêu thị
 let audioCtx=null;
@@ -1231,9 +1277,9 @@ async function startScan(mode){
   try{const t=scanStream.getVideoTracks()[0];const c=t.getCapabilities&&t.getCapabilities();
     if(c&&c.focusMode&&c.focusMode.includes('continuous'))await t.applyConstraints({advanced:[{focusMode:'continuous'}]});}catch(e){}
   scanMsg('Đang tải bộ đọc mã…');
-  try{await getDetector();}catch(e){scanMsg('Không tải được bộ đọc mã. Kiểm tra mạng, hoặc gõ số mã vạch bên dưới.');return;}
+  try{detector=await getDetector(scanKey());}catch(e){scanMsg('Không tải được bộ đọc mã. Kiểm tra mạng, hoặc gõ số mã vạch bên dưới.');return;}
   if(!scanStream)return;
-  scanMsg('Đưa mã vạch vào khung cam, cách 10–20 cm, đủ sáng');
+  scanMsg(scanKey()==='qr'?'Đưa mã QR vào khung cam, cách 10–20 cm, đủ sáng':'Đưa mã vạch vào khung cam, cách 10–20 cm, đủ sáng');
   scanLoop();
 }
 async function scanLoop(){
@@ -1246,8 +1292,8 @@ async function scanLoop(){
       const cw=Math.round(W*0.8),ch=Math.round(H*0.5);
       scanCanvas.width=cw;scanCanvas.height=ch;
       scanCtx.drawImage(v,(W-cw)/2,(H-ch)/2,cw,ch,0,0,cw,ch);
-      let res=await detector.detect(scanCanvas);
-      if(!res.length){scanCanvas.width=W;scanCanvas.height=H;scanCtx.drawImage(v,0,0,W,H);res=await detector.detect(scanCanvas);}
+      let res=keepByType(await detector.detect(scanCanvas));
+      if(!res.length){scanCanvas.width=W;scanCanvas.height=H;scanCtx.drawImage(v,0,0,W,H);res=keepByType(await detector.detect(scanCanvas));}
       const code=res.length?String(res[0].rawValue||'').trim():'';
       if(code){
         hitCount=code===lastHit?hitCount+1:1;lastHit=code;
@@ -1431,7 +1477,7 @@ $('hlist').onclick=async e=>{
   if(d.dc)openCollect(d.dc);
   if(d.dl)openLog(d.dl);
   if(d.del&&await askConfirm('Xóa đơn này khỏi lịch sử? Doanh thu sẽ giảm và tồn kho được cộng lại.')){
-    const o=db.orders.find(x=>x.id===d.del);if(o){o.deleted=true;touch(o);save();renderHist();renderPick();}
+    const o=db.orders.find(x=>x.id===d.del);if(o){o.deleted=true;touch(o);logAct('order','order_del','Xóa đơn '+(o.code||'')+' · '+money(o.total),o.id);save();renderHist();renderPick();}
   }
 };
 
@@ -1471,7 +1517,7 @@ $('logBtns').onclick=async e=>{
   if(t.dataset.lr)showReceipt(o);
   if(t.dataset.lx){
     if(!await askConfirm('Xóa đơn nợ này khỏi nhật ký?\nĐơn hàng và doanh thu vẫn giữ nguyên.'))return;
-    o.debtHidden=true;touch(o);save();$('logModal').classList.add('hide');renderDebts();
+    o.debtHidden=true;touch(o);logAct('order','debt_hide','Ẩn nhật ký nợ đơn '+(o.code||''),o.id);save();$('logModal').classList.add('hide');renderDebts();
   }
 };
 
@@ -1531,6 +1577,8 @@ $('debtToggle').onclick=()=>{local.debtOpen=!local.debtOpen;saveLocal();renderDe
 $('debtSort').onchange=()=>{debtShow=5;renderDebts();};
 $('debtTab').onclick=e=>{const b=e.target.closest('button[data-dt]');if(!b)return;debtTab=b.dataset.dt;debtShow=5;renderDebts();};
 $('debtDays').addEventListener('input',()=>{const d=$('debtDays').value.replace(/\D/g,'');$('debtDays').value=d;if(+d>0){local.debtDays=+d;saveLocal();renderDebts();}});
+$('debtDays').addEventListener('change',()=>{if(+local.debtDays>0){logAct('sys','set_debt','Đổi cảnh báo nợ quá '+local.debtDays+' ngày');save();}});
+$('debtKeep').addEventListener('change',()=>{if(local.debtKeep!=null){logAct('sys','set_debt','Đổi tự xóa nhật ký nợ đã thu sau '+local.debtKeep+' ngày');save();}});
 $('debtKeep').addEventListener('input',()=>{const d=$('debtKeep').value.replace(/\D/g,'');$('debtKeep').value=d;if(d!==''){local.debtKeep=+d;saveLocal();renderDebts();}});
 $('debtList').onclick=e=>{
   const t=e.target.closest('button');if(!t)return;const d=t.dataset;
@@ -1616,6 +1664,7 @@ function drawLabel(name,code,key){
   return c;
 }
 let lblState=null;
+function logTem(how,n){logAct('tag','tem_'+(how==='print'?'print':'share'),(how==='print'?'In ':'Gửi ảnh ')+n+' tem "'+lblState.name+'" · '+lblState.code,null,n);save();}
 const lblN=()=>Math.min(50,Math.max(1,numOf($('lblQty').value)||1));
 $('genBar').onclick=async()=>{
   const cur=$('pbar').value.trim();
@@ -1623,6 +1672,7 @@ $('genBar').onclick=async()=>{
   const c=newBarcode();
   if(!c)return alert('Chưa tạo được mã, thử lại');
   $('pbar').value=c;
+  logAct('tag','code_gen','Tạo mã vạch '+c);save();
 };
 $('printLbl').onclick=()=>{
   const name=$('pname').value.trim(),code=$('pbar').value.trim();
@@ -1651,9 +1701,9 @@ $('lblShare').onclick=async()=>{
   const name='tem-'+lblState.code+(n>1?'-x'+n:'')+'.png';
   const file=new File([blob],name,{type:'image/png'});
   try{
-    if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file]});return;}
+    if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file]});logTem('share',n);return;}
   }catch(e){if(e&&e.name==='AbortError')return;}
-  const a=document.createElement('a');a.href=URL.createObjectURL(file);a.download=name;document.body.appendChild(a);a.click();a.remove();
+  const a=document.createElement('a');a.href=URL.createObjectURL(file);a.download=name;document.body.appendChild(a);a.click();a.remove();logTem('share',n);
 };
 $('lblPrint').onclick=()=>{
   if(!lblState)return;
@@ -1661,7 +1711,85 @@ $('lblPrint').onclick=()=>{
   const url=drawLabel(lblState.name,lblState.code,lblKey()).toDataURL('image/png');
   $('pageStyle').textContent='@page{size:'+mw+'mm '+mh+'mm;margin:0}#printArea{width:'+mw+'mm}#printArea img{display:block;width:'+mw+'mm;height:'+mh+'mm;page-break-after:always}#printArea img:last-child{page-break-after:auto}';
   $('printArea').innerHTML=Array(n).fill('<img src="'+url+'">').join('');
+  logTem('print',n);
   window.print();
+};
+
+/* ================= QUẢN LÝ SỬ DỤNG ================= */
+// Ghi lại thao tác của từng máy/người bán. Danh sách chỉ hiện 90 ngày gần nhất; dữ liệu cũ hơn vẫn được giữ.
+const LOGCAT={order:'Đơn hàng',prod:'Sản phẩm và kho',tag:'Mã và tem',sys:'Cài đặt và dữ liệu'};
+const LOG_DAYS=90;
+const devLabel=x=>x||'(chưa đặt tên)';
+let usePage=1;
+function logAct(cat,k,text,ref,n){
+  try{
+    const r={id:uid(),time:new Date().toISOString(),by:local.device||'',cat,k,text};
+    if(ref)r.ref=ref;if(n)r.n=n;
+    db.logs.push(touch(r));
+  }catch(e){}
+}
+function useSince(){
+  const v=$('usePeriod').value;
+  if(v==='today'){const d=new Date();d.setHours(0,0,0,0);return d.getTime();}
+  return Date.now()-(+v)*864e5;
+}
+function renderUse(){
+  const min90=Date.now()-LOG_DAYS*864e5;
+  const allLogs=db.logs.filter(l=>!l.deleted&&new Date(l.time)>=min90);
+  const allOrd=ords().filter(o=>new Date(o.time)>=min90);
+  const devs=[...new Set([...allLogs.map(l=>l.by||''),...allOrd.map(o=>o.by||''),local.device||''])]
+    .sort((a,b)=>devLabel(a).localeCompare(devLabel(b),'vi'));
+  const sel=$('useDev'),cur=sel.options.length?sel.value:'*';
+  sel.innerHTML='<option value="*">Tất cả máy</option>'+devs.map(d=>'<option value="'+esc(d)+'">'+esc(devLabel(d))+'</option>').join('');
+  sel.value=(cur==='*'||devs.includes(cur))?cur:'*';
+  const dsel=sel.value,from=Math.max(useSince(),min90),cat=$('useCat').value;
+  const fd=d=>dsel==='*'||(d||'')===dsel;
+  const logs=allLogs.filter(l=>new Date(l.time)>=from&&fd(l.by));
+  const os=allOrd.filter(o=>new Date(o.time)>=from&&fd(o.by));
+  // Tổng hợp theo máy
+  const rows={};
+  const row=d=>rows[d]||(rows[d]={orders:0,rev:0,padd:0,codes:0,tems:0,sets:0});
+  devs.filter(fd).forEach(d=>row(d));
+  os.forEach(o=>{const r=row(o.by||'');r.orders++;r.rev+=+o.total||0;});
+  logs.forEach(l=>{
+    const r=row(l.by||''),k=String(l.k||'');
+    if(k==='prod_add')r.padd++;
+    else if(k==='code_gen')r.codes++;
+    else if(k==='tem_print'||k==='tem_share')r.tems+=+l.n||0;
+    else if(k.startsWith('set_'))r.sets++;
+  });
+  const keys=Object.keys(rows).sort((a,b)=>devLabel(a).localeCompare(devLabel(b),'vi'));
+  const tot={orders:0,rev:0,padd:0,codes:0,tems:0,sets:0};
+  keys.forEach(d=>Object.keys(tot).forEach(f=>tot[f]+=rows[d][f]));
+  const tr=(name,r,b)=>'<tr'+(b?' style="font-weight:600"':'')+'><td>'+name+'</td><td>'+r.orders+'</td><td>'+fmtNum(r.rev)+'</td><td>'+r.padd+'</td><td>'+r.codes+'</td><td>'+r.tems+'</td><td>'+r.sets+'</td></tr>';
+  $('useSum').innerHTML='<table class="tb" style="font-size:13px"><tr><th>Máy</th><th>Đơn</th><th>Doanh thu</th><th>SP mới</th><th>Mã</th><th>Tem</th><th>Cài đặt</th></tr>'
+    +keys.map(d=>tr(esc(devLabel(d)),rows[d])).join('')+(keys.length>1?tr('Tổng',tot,true):'')+'</table>'
+    +'<p class="muted" style="margin:4px 0 8px">Doanh thu tính đủ cả đơn nợ. SP mới = sản phẩm thêm mới, Mã = mã vạch đã tạo, Tem = số tem đã in hoặc gửi.</p>';
+  // Danh sách thao tác (mới nhất trước), 20 dòng mỗi trang
+  const list=logs.filter(l=>cat==='*'||l.cat===cat).sort((a,b)=>new Date(b.time)-new Date(a.time));
+  const pages=Math.max(1,Math.ceil(list.length/PAGE));
+  usePage=Math.min(Math.max(1,usePage),pages);
+  const fmtT=t=>new Date(t).toLocaleString('vi-VN',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+  $('useList').innerHTML=list.length
+    ?list.slice((usePage-1)*PAGE,usePage*PAGE).map(l=>{
+        const ord=l.ref?db.orders.find(o=>o.id===l.ref):null;
+        return '<div class="line"><div style="min-width:0"><div class="muted">'+fmtT(l.time)+' · '+esc(devLabel(l.by))+' · '+esc(LOGCAT[l.cat]||'')+'</div><div>'+esc(l.text)+'</div></div>'
+          +(ord?'<button class="sm" style="flex:none;white-space:nowrap" data-useo="'+esc(l.ref)+'">Xem đơn</button>':'')+'</div>';
+      }).join('')
+      +(pages>1?'<div class="row" style="margin:10px 0 0;justify-content:center"><button class="sm" data-upg="-1"'+(usePage<=1?' disabled':'')+'>‹ Trước</button><span class="muted">Trang '+usePage+'/'+pages+' · '+list.length+' thao tác</span><button class="sm" data-upg="1"'+(usePage>=pages?' disabled':'')+'>Sau ›</button></div>':'<p class="muted" style="margin:8px 0 0">'+list.length+' thao tác</p>')
+    :'<p class="muted">Chưa có thao tác nào trong khoảng này.</p>';
+  let note='Chỉ hiện '+LOG_DAYS+' ngày gần nhất; dữ liệu cũ hơn vẫn được giữ.';
+  if(!cfg.url)note+=' Chưa kết nối Google Sheets nên chỉ thấy thao tác của máy này.';
+  else if((cfg.sv||0)<4)note+=' Apps Script đang là bản cũ (dưới v4) nên chưa xem được thao tác của máy kia. Dán Code.gs mới và triển khai phiên bản mới.';
+  $('useNote').textContent=note;
+}
+$('useOpen').onclick=()=>{usePage=1;renderUse();$('useModal').classList.remove('hide');};
+$('useClose').onclick=()=>$('useModal').classList.add('hide');
+['useDev','usePeriod','useCat'].forEach(id=>$(id).onchange=()=>{usePage=1;renderUse();});
+$('useList').onclick=e=>{
+  const b=e.target.closest('button');if(!b)return;
+  if(b.dataset.upg){usePage+=+b.dataset.upg;renderUse();return;}
+  if(b.dataset.useo){const o=db.orders.find(x=>x.id===b.dataset.useo);if(o&&!o.deleted)showReceipt(o);else alert('Đơn này đã bị xóa.');}
 };
 
 /* ================= CÀI ĐẶT ================= */
@@ -1669,6 +1797,8 @@ function loadSettings(){
   $('devName').value=local.device||'';
   $('paper').value=local.paper==='80'?'80':'58';
   $('lblSize').value=lblKey();
+  $('scanType').value=scanKey();
+  const since=Date.now()-LOG_DAYS*864e5;$('useInfo').textContent='Xem số đơn đã bán, sản phẩm thêm, mã đã tạo và thay đổi cài đặt của từng máy/người bán. Có '+db.logs.filter(l=>!l.deleted&&new Date(l.time)>=since).length+' thao tác trong '+LOG_DAYS+' ngày gần nhất.';
   $('devHint').textContent='Mã đơn tiếp theo: '+nextCode();
   const s=db.shop||{};
   $('shopName').value=s.name||'';$('shopAddr').value=s.addr||'';$('shopPhone').value=s.phone||'';$('shopFoot').value=s.foot||'';
@@ -1680,12 +1810,19 @@ $('devSave').onclick=()=>{
   const n=$('devName').value.trim();
   const t=tagOf(n);
   if(n&&!t)return alert('Tên máy cần có ít nhất 1 chữ hoặc số');
+  const oldDev=local.device||'',oldPaper=local.paper==='80'?'80':'58',oldLbl=lblKey();
   local.device=n.slice(0,20);local.paper=$('paper').value;local.label=$('lblSize').value;saveLocal();
+  if(oldDev!==local.device)logAct('sys','set_device','Đổi tên máy: "'+oldDev+'" → "'+local.device+'"');
+  if(oldPaper!==local.paper)logAct('sys','set_paper','Đổi khổ giấy hóa đơn: '+oldPaper+' → '+local.paper+' mm');
+  if(oldLbl!==local.label)logAct('sys','set_label','Đổi cỡ tem: '+oldLbl.replace('x',' × ')+' → '+local.label.replace('x',' × ')+' mm');
+  save();
   updateHint();loadSettings();renderTitle();alert('Đã lưu');
 };
+const SCANNAME={bar:'Chỉ mã vạch',qr:'Chỉ mã QR',all:'Mã vạch và mã QR'};
+$('scanSave').onclick=()=>{const old=scanKey();local.scan=$('scanType').value;saveLocal();if(old!==scanKey()){logAct('sys','set_scan','Đổi kiểu quét: '+SCANNAME[old]+' → '+SCANNAME[scanKey()]);save();}alert('Đã lưu kiểu quét');};
 $('shopSave').onclick=()=>{
   db.shop=touch({name:$('shopName').value.trim(),addr:$('shopAddr').value.trim(),phone:$('shopPhone').value.trim(),foot:$('shopFoot').value.trim(),updated:(db.shop||{}).updated});
-  save();renderTitle();alert('Đã lưu thông tin cửa hàng');
+  logAct('sys','set_shop','Cập nhật thông tin cửa hàng');save();renderTitle();alert('Đã lưu thông tin cửa hàng');
 };
 let tmpQR;
 function showQRPrev(src){
@@ -1716,7 +1853,7 @@ $('bankSave').onclick=()=>{
   const qr=tmpQR===undefined?old.qr:tmpQR;
   if(!acc&&!qr)return alert('Nhập số tài khoản hoặc tải lên ảnh mã QR');
   db.bank=touch({bin:$('bankSel').value,acc,name:$('bankName').value.trim(),qr:qr||null,updated:old.updated});
-  tmpQR=undefined;save();alert('Đã lưu');
+  tmpQR=undefined;logAct('sys','set_bank','Cập nhật tài khoản ngân hàng');save();alert('Đã lưu');
 };
 
 /* ================= SAO LƯU FILE ================= */
@@ -1728,7 +1865,7 @@ $('exp').onclick=async()=>{
   try{if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],title:name});done=true;}}
   catch(e){if(e&&e.name==='AbortError')return;}
   if(!done){const a=document.createElement('a');a.href=URL.createObjectURL(file);a.download=name;document.body.appendChild(a);a.click();a.remove();}
-  local.lastBackup=new Date().toISOString();saveLocal();renderBackupInfo();
+  local.lastBackup=new Date().toISOString();saveLocal();logAct('sys','backup','Sao lưu dữ liệu ra file');save();renderBackupInfo();
 };
 function renderBackupInfo(){
   const n=prods().length,o=ords().length;
@@ -1756,6 +1893,7 @@ $('imp').onchange=async e=>{
     if(!await askConfirm('Gộp dữ liệu trong file ('+data.products.length+' sản phẩm, '+data.orders.length+' đơn) vào dữ liệu đang có?'))return;
     LISTS.forEach(k=>mergeArr(db[k],(data[k]||[]).map(r=>({...r,updated:r.updated||1})),true));
     ['shop','bank'].forEach(k=>{if(data[k]&&(!db[k]||!db[k].updated||(data[k].updated||1)>(db[k].updated||0)))db[k]={...data[k],updated:Math.max(data[k].updated||1,(db[k]&&db[k].updated||0)+1),_l:1};});
+    logAct('sys','import','Nhập dữ liệu từ file ('+data.products.length+' sản phẩm, '+data.orders.length+' đơn)');
     save();renderAll();alert('Đã nhập dữ liệu');
   }catch(err){alert('File không hợp lệ');}
   finally{e.target.value='';}
@@ -1766,7 +1904,8 @@ $('imp').onchange=async e=>{
 let cfg={};try{cfg=JSON.parse(localStorage.getItem(SYNC)||'{}');}catch(e){cfg={};}
 let syncing=false,again=false,syncTimer=null,retryN=0;
 const saveCfg=()=>localStorage.setItem(SYNC,JSON.stringify(cfg));
-function dirtyCount(){return LISTS.reduce((s,k)=>s+db[k].filter(r=>r._l).length,0)+(db.shop&&db.shop._l?1:0)+(db.bank&&db.bank._l?1:0);}
+const SLISTS=()=>(cfg.sv||0)>=4?LISTS:LISTS.filter(k=>k!=='logs'); // Apps Script cũ chưa lưu lịch sử thao tác
+function dirtyCount(){return SLISTS().reduce((s,k)=>s+db[k].filter(r=>r._l).length,0)+(db.shop&&db.shop._l?1:0)+(db.bank&&db.bank._l?1:0);}
 function renderSync(){
   const dot=$('syncDot');
   if(!cfg.url){dot.textContent='';$('syncInfo').textContent='Chưa kết nối. Dữ liệu chỉ nằm trong máy này.';$('syncInfo').style.color='#c62828';return;}
@@ -1799,8 +1938,8 @@ async function sync(){
   if(syncing){again=true;return false;}
   syncing=true;again=false;renderSync();
   // Gom các thay đổi của máy này
-  const changes={},sent=[];
-  LISTS.forEach(k=>{changes[k]=db[k].filter(r=>r._l).map(r=>{sent.push([k,r.id,r.updated]);return strip(r);});});
+  const changes={},sent=[],sentLogs=SLISTS().includes('logs');
+  SLISTS().forEach(k=>{changes[k]=db[k].filter(r=>r._l).map(r=>{sent.push([k,r.id,r.updated]);return strip(r);});});
   ['shop','bank'].forEach(k=>{if(db[k]&&db[k]._l){changes[k]=strip(db[k]);sent.push([k,null,db[k].updated]);}});
   let ok=false;
   try{
@@ -1821,6 +1960,7 @@ async function sync(){
       sent.forEach(([k,id,u])=>{if(k==='groups'&&oldSrv)return;const r=id?db[k].find(x=>x.id===id):db[k];if(r&&r.updated===u)delete r._l;});
       cfg.warn=oldSrv&&db.groups.some(g=>g._l)?'old_groups':'';
       cfg.cursor=res.cursor;cfg.err='';cfg.last=new Date().toISOString();ok=true;
+      cfg.sv=res.v||0;if(!sentLogs&&cfg.sv>=4&&db.logs.some(r=>r._l))again=true;
       persist();
       if(LISTS.some(k=>(rc[k]||[]).length)||rc.shop||rc.bank)renderAll(true);
     }else if(res.ok){cfg.err='old_script';}
@@ -1848,9 +1988,10 @@ $('syncSave').onclick=async()=>{
   try{res=await api('ping');}catch(e){alert('Không kết nối được. Kiểm tra lại địa chỉ, và phần "Ai có quyền truy cập" phải là "Bất kỳ ai".');renderSync();return;}
   if(!res.ok){cfg.err=res.err;saveCfg();renderSync();return alert(res.err==='wrong_key'?'Mã bí mật không khớp với mã trong Apps Script.':'Lỗi: '+res.err);}
   if(!res.v||res.v<2){cfg.err='old_script';saveCfg();renderSync();return alert('Apps Script đang là bản cũ. Hãy dán Code.gs mới rồi triển khai phiên bản mới.');}
+  cfg.sv=res.v||0;saveCfg();
   if(changed||cfg.cursor==null)markAllLocal();
   const ok=await sync();
-  if(ok)alert('Đã kết nối. Dữ liệu của máy này đã được gộp với dữ liệu trên Google Sheets.');
+  if(ok){logAct('sys','sync_on','Kết nối Google Sheets');save();alert('Đã kết nối. Dữ liệu của máy này đã được gộp với dữ liệu trên Google Sheets.');}
 };
 $('syncNow').onclick=async()=>{
   if(!cfg.url)return alert('Chưa kết nối Google Sheets');
@@ -1866,6 +2007,7 @@ $('syncFull').onclick=async()=>{
 $('syncOff').onclick=async()=>{
   if(!cfg.url)return;
   if(!await askConfirm('Ngắt kết nối Google Sheets? Dữ liệu trong máy và trên Sheets vẫn giữ nguyên.'))return;
+  logAct('sys','sync_off','Ngắt kết nối Google Sheets');persist();
   cfg={};saveCfg();$('syncUrl').value='';$('syncKey').value='';renderSync();renderBackupInfo();
 };
 window.addEventListener('online',()=>{if(cfg.url)sync();});
@@ -1887,6 +2029,7 @@ function renderAll(fromSync){
   if($('t-hist').classList.contains('on'))renderHist();
   if(!fromSync&&$('t-set').classList.contains('on'))loadSettings(); // không ghi đè ô đang gõ khi dữ liệu về từ máy kia
   renderBackupInfo();renderSync();
+  if(!$('useModal').classList.contains('hide'))renderUse();
   if(cart.length)renderCart();
 }
 renderAll();renderCart();resetExtra();
