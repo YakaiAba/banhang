@@ -24,6 +24,11 @@ table.tb.gt td:first-child,table.tb.gt th:first-child{text-align:left}
 table.gt tr.sel td{background:#e8eefb}
 .glink{border:0;background:none;padding:2px 0;color:#1d4ed8;text-decoration:underline;font-size:15px;text-align:left}
 .fcard{margin-bottom:14px}
+.plrow{display:grid;grid-template-columns:1fr 84px 38px;gap:6px;align-items:center;margin-top:6px}
+.plrow input{padding:9px 8px;min-width:0}
+.plrow.plhead{font-size:13px;color:#777;margin-top:12px}
+.plrow button{padding:6px 0}
+.plan{border:1px solid #e3e6ee;border-radius:10px;padding:8px 10px;margin-top:8px}
 #hlist .card{box-shadow:none;border:1px solid #e3e6ee;margin-bottom:8px}
 .fcard>h3.fh{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:-12px -12px 0;padding:13px 12px;background:#eaf0fb;color:#12306B;border-left:5px solid #12306B;border-radius:12px 12px 0 0;font-size:16px;cursor:pointer;-webkit-user-select:none;user-select:none}
 .fcard>h3.fh.warn{background:#fdecec;color:#c62828;border-left-color:#c62828}
@@ -180,6 +185,16 @@ table.tb th:first-child,table.tb td:first-child{text-align:left}
    <input id="gsearch" placeholder="Tìm nhóm (không dấu cũng được)" style="margin-top:10px">
    <div id="gsres"></div>
    
+  </div>
+  <div class="card">
+   <h3>Kế hoạch nhập hàng</h3>
+   <input id="planName" maxlength="60" placeholder="Tên kế hoạch, ví dụ: Kế hoạch tháng 11">
+   <div class="plrow plhead"><span>Tên sản phẩm</span><span>Số lượng</span><span></span></div>
+   <div id="planRows"></div>
+   <datalist id="planProds"></datalist>
+   <div class="row" style="margin:10px 0 0"><button class="primary" id="planSave" style="flex:1">Lưu kế hoạch</button><button id="planCancel" style="display:none">Hủy sửa</button></div>
+   <h3 style="margin:16px 0 4px">Danh sách kế hoạch</h3>
+   <div id="planList"></div>
   </div>
  </section>
 
@@ -438,9 +453,9 @@ table.tb th:first-child,table.tb td:first-child{text-align:left}
 <div id="printArea"></div>
 
 <script>
-const APP_VER='3.2 (30/10/2026)';
+const APP_VER='3.3 (30/10/2026)';
 const KEY='banhang.v1', LOCAL='banhang.local', SYNC='banhang.sync';
-const LISTS=['products','orders','stockIns','groups','logs'];
+const LISTS=['products','orders','stockIns','groups','logs','plans'];
 const $=id=>document.getElementById(id);
 const money=n=>Math.round(+n||0).toLocaleString('vi-VN')+'đ';
 const fmtNum=n=>Math.round(+n||0).toLocaleString('vi-VN');
@@ -1158,7 +1173,7 @@ function renderProducts(){
   const low=lowList(sm);
   $('lowCard').style.display=low.length?'':'none';
   $('lowList').innerHTML=low.slice(0,5).map(p=>lowRow(p,sm)).join('')+(low.length>5?`<button class="sm" data-pgo="low" style="width:100%;margin-top:8px">Xem tất cả (${low.length} sản phẩm)</button>`:'');
-  fillGroupSel();renderGroups();renderPage();
+  fillGroupSel();renderGroups();renderPlans();renderPage();
 }
 $('psearch').oninput=()=>{psPage=1;renderProducts();};
 // Bấm trong danh sách sản phẩm (kết quả tìm kiếm và sản phẩm trong nhóm)
@@ -2037,7 +2052,7 @@ $('imp').onchange=async e=>{
 let cfg={};try{cfg=JSON.parse(localStorage.getItem(SYNC)||'{}');}catch(e){cfg={};}
 let syncing=false,again=false,syncTimer=null,retryN=0;
 const saveCfg=()=>localStorage.setItem(SYNC,JSON.stringify(cfg));
-const SLISTS=()=>(cfg.sv||0)>=4?LISTS:LISTS.filter(k=>k!=='logs'); // Apps Script cũ chưa lưu lịch sử thao tác
+const SLISTS=()=>LISTS.filter(k=>!((k==='logs'&&(cfg.sv||0)<4)||(k==='plans'&&(cfg.sv||0)<5))); // Apps Script cũ chưa lưu lịch sử thao tác (v4) / kế hoạch nhập hàng (v5)
 function dirtyCount(){return SLISTS().reduce((s,k)=>s+db[k].filter(r=>r._l).length,0)+(db.shop&&db.shop._l?1:0)+(db.bank&&db.bank._l?1:0);}
 function renderSync(){
   const dot=$('syncDot');
@@ -2071,7 +2086,7 @@ async function sync(){
   if(syncing){again=true;return false;}
   syncing=true;again=false;renderSync();
   // Gom các thay đổi của máy này
-  const changes={},sent=[],sentLogs=SLISTS().includes('logs');
+  const changes={},sent=[],sentN=SLISTS().length;
   SLISTS().forEach(k=>{changes[k]=db[k].filter(r=>r._l).map(r=>{sent.push([k,r.id,r.updated]);return strip(r);});});
   ['shop','bank'].forEach(k=>{if(db[k]&&db[k]._l){changes[k]=strip(db[k]);sent.push([k,null,db[k].updated]);}});
   let ok=false;
@@ -2093,7 +2108,7 @@ async function sync(){
       sent.forEach(([k,id,u])=>{if(k==='groups'&&oldSrv)return;const r=id?db[k].find(x=>x.id===id):db[k];if(r&&r.updated===u)delete r._l;});
       cfg.warn=oldSrv&&db.groups.some(g=>g._l)?'old_groups':'';
       cfg.cursor=res.cursor;cfg.err='';cfg.last=new Date().toISOString();ok=true;
-      cfg.sv=res.v||0;if(!sentLogs&&cfg.sv>=4&&db.logs.some(r=>r._l))again=true;
+      cfg.sv=res.v||0;if(SLISTS().length>sentN&&SLISTS().some(k=>db[k].some(r=>r._l)))again=true;
       persist();
       if(LISTS.some(k=>(rc[k]||[]).length)||rc.shop||rc.bank)renderAll(true);
     }else if(res.ok){cfg.err='old_script';}
@@ -2166,9 +2181,86 @@ function renderAll(fromSync){
   renderPage();
   if(cart.length)renderCart();
 }
+/* ================= KẾ HOẠCH NHẬP HÀNG ================= */
+// Cột 1 tên sản phẩm, cột 2 số lượng. Nhập xong một dòng thì tự hiện thêm dòng trống.
+let planEditId=null;const planOpen=new Set();
+function planRow(n,q){
+  const d=document.createElement('div');d.className='plrow';
+  d.innerHTML='<input class="pn" list="planProds" placeholder="Tên sản phẩm" autocomplete="off"><input class="pq" inputmode="numeric" placeholder="SL"><button class="sm danger" type="button" tabindex="-1">✕</button>';
+  d.querySelector('.pn').value=n||'';d.querySelector('.pq').value=q||'';
+  return d;
+}
+function planAddIfFull(){
+  const rows=$('planRows').children,last=rows[rows.length-1];
+  if(!last||(last.querySelector('.pn').value.trim()&&last.querySelector('.pq').value.trim()))$('planRows').appendChild(planRow());
+}
+function planFormSet(name,items){
+  $('planName').value=name||'';$('planRows').innerHTML='';
+  (items||[]).forEach(i=>$('planRows').appendChild(planRow(i.name,String(i.qty))));
+  planAddIfFull();
+}
+$('planRows').addEventListener('input',e=>{
+  if(e.target.classList.contains('pq')){const v=e.target.value.replace(/\D/g,'');if(v!==e.target.value)e.target.value=v;}
+  planAddIfFull();
+});
+$('planRows').addEventListener('click',e=>{
+  const b=e.target.closest('button');if(!b)return;
+  b.parentNode.remove();planAddIfFull();
+});
+function planEnd(){planEditId=null;planFormSet('',[]);$('planSave').textContent='Lưu kế hoạch';$('planCancel').style.display='none';}
+$('planCancel').onclick=planEnd;
+$('planSave').onclick=()=>{
+  const name=$('planName').value.trim().replace(/\s+/g,' ');
+  if(!name)return alert('Nhập tên kế hoạch, ví dụ: Kế hoạch tháng 11');
+  const items=[];
+  for(const r of $('planRows').children){
+    const n=r.querySelector('.pn').value.trim().replace(/\s+/g,' '),q=r.querySelector('.pq').value.trim();
+    if(!n&&!q)continue;
+    if(!n)return alert('Có dòng nhập số lượng nhưng chưa có tên sản phẩm');
+    if(!(+q>0))return alert('Nhập số lượng lớn hơn 0 cho "'+n+'"');
+    items.push({name:n,qty:+q});
+  }
+  if(!items.length)return alert('Chưa có sản phẩm nào trong kế hoạch');
+  if(planEditId){
+    const p=db.plans.find(x=>x.id===planEditId&&!x.deleted);
+    if(p){p.name=name;p.items=items;touch(p);logAct('prod','plan_edit','Sửa kế hoạch nhập hàng "'+name+'" ('+items.length+' mặt hàng)');}
+  }else{
+    db.plans.push(touch({id:uid(),name,items}));
+    logAct('prod','plan_add','Tạo kế hoạch nhập hàng "'+name+'" ('+items.length+' mặt hàng)');
+  }
+  save();planEnd();renderPlans();
+};
+function renderPlans(){
+  $('planProds').innerHTML=prods().map(p=>'<option value="'+esc(p.name)+'">').join('');
+  const list=db.plans.filter(p=>!p.deleted).sort((a,b)=>addedTime(b)-addedTime(a));
+  $('planList').innerHTML=list.length?list.map(p=>{
+    const tot=(p.items||[]).reduce((t,i)=>t+(+i.qty||0),0),open=planOpen.has(p.id);
+    return `<div class="plan"><div class="line" style="border:0;padding:0"><div style="flex:1;min-width:0"><b>${esc(p.name)}</b><div class="muted">${(p.items||[]).length} mặt hàng · tổng ${fmtNum(tot)} · tạo ${fmtD(addedTime(p))}</div></div></div>
+      ${open?`<table class="tb" style="margin-top:6px"><tr><th>Tên sản phẩm</th><th>SL</th></tr>${(p.items||[]).map(i=>`<tr><td>${esc(i.name)}</td><td>${fmtNum(i.qty)}</td></tr>`).join('')}</table>`:''}
+      <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:6px"><button class="sm" data-pv="${p.id}">${open?'Ẩn':'Xem'}</button><button class="sm" data-pe="${p.id}">Sửa</button><button class="sm danger" data-px="${p.id}">Xóa</button></div></div>`;
+  }).join(''):'<p class="muted" style="margin:6px 0 0">Chưa có kế hoạch nào.</p>';
+}
+$('planList').onclick=async e=>{
+  const b=e.target.closest('button');if(!b)return;const d=b.dataset;
+  if(d.pv){planOpen.has(d.pv)?planOpen.delete(d.pv):planOpen.add(d.pv);renderPlans();}
+  if(d.pe){
+    const p=db.plans.find(x=>x.id===d.pe&&!x.deleted);if(!p)return;
+    planEditId=p.id;planFormSet(p.name,p.items);$('planSave').textContent='Lưu thay đổi';$('planCancel').style.display='';
+    openFold($('planName'));$('planName').scrollIntoView({behavior:'smooth',block:'center'});
+  }
+  if(d.px){
+    const p=db.plans.find(x=>x.id===d.px&&!x.deleted);
+    if(p&&await askConfirm('Xóa kế hoạch "'+p.name+'"?')){
+      p.deleted=true;touch(p);logAct('prod','plan_del','Xóa kế hoạch nhập hàng "'+p.name+'"');
+      if(planEditId===p.id)planEnd();save();renderPlans();
+    }
+  }
+};
+planFormSet('',[]);
+
 /* ================= THẺ THU GỌN ================= */
 // Tab Sản phẩm, Báo cáo, Cài đặt: mỗi danh mục là một thẻ có thanh tiêu đề; bấm tiêu đề để mở/đóng, máy nhớ trạng thái.
-const FOLD_DEF={'t-prod':[0,1,0,0],'t-hist':[0,0,0,0],'t-set':[1,0,0,0,0,0,0]}; // 1 = mở sẵn (theo thứ tự thẻ có tiêu đề)
+const FOLD_DEF={'t-prod':[0,1,0,0,0],'t-hist':[0,0,0,0],'t-set':[1,0,0,0,0,0,0]}; // 1 = mở sẵn (theo thứ tự thẻ có tiêu đề)
 function initFold(){
   local.fold=local.fold||{};
   Object.keys(FOLD_DEF).forEach(sec=>{
