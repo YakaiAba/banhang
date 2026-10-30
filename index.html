@@ -17,8 +17,12 @@ header{background:#f26a1b;color:#fff;padding:14px 16px;font-size:18px;font-weigh
 .devname{font-weight:500;font-size:15px;white-space:nowrap}
 .pager{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:8px}
 .pager button.on{background:#f26a1b;color:#fff;border-color:#f26a1b}
-#glist table.tb td,#glist table.tb th{text-align:center}
-#glist table.tb td:first-child,#glist table.tb th:first-child{text-align:left}
+table.tb.gt td,table.tb.gt th{text-align:center}
+table.tb.gt td:first-child,table.tb.gt th:first-child{text-align:left}
+table.gt tr.sel td{background:#fff3e0}
+.glink{border:0;background:none;padding:2px 0;color:#d35400;text-decoration:underline;font-size:15px;text-align:left}
+.gpanel{margin-top:10px;background:#fafafa;border:1px solid #eee;border-radius:10px;padding:8px 10px}
+.stats{margin-top:4px;padding:8px;background:#f7f7f9;border-radius:8px;text-align:center;font-size:15px}
 main{padding:12px;max-width:900px;margin:0 auto}
 .tab{display:none}.tab.on{display:block}
 nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:#fff;border-top:1px solid #ddd;padding-bottom:env(safe-area-inset-bottom);z-index:6}
@@ -125,15 +129,24 @@ table.tb th:first-child,table.tb td:first-child{text-align:left}
    <div class="field"><label>Nhóm sản phẩm</label><select id="pgroup"></select></div>
    <input type="hidden" id="pid">
    <div class="row"><button class="primary" id="psave">Lưu sản phẩm</button><button id="preset">Xóa form</button></div>
+   <div id="pstats" class="stats"></div>
   </div>
   <div class="card">
    <h3>Thêm nhóm sản phẩm</h3>
    <div class="row" style="margin:0"><input id="gname" maxlength="40" placeholder="Tên nhóm, ví dụ: Truyện"><button id="gsave" class="green" style="width:auto;flex:none;white-space:nowrap">Thêm nhóm</button></div>
    <button id="gcancel" class="sm" style="display:none;margin-top:6px">Hủy sửa</button>
    <div id="glist" style="margin-top:10px"></div>
+   <div id="gprods"></div>
   </div>
-  <input id="psearch" placeholder="Tìm trong danh sách sản phẩm" style="margin-bottom:10px">
-  <div id="plist"></div>
+  <div class="card">
+   <h3>Tìm kiếm</h3>
+   <label>Tìm kiếm nhóm</label>
+   <input id="gsearch" placeholder="Gõ tên nhóm (không dấu cũng được)">
+   <div id="gsres"></div>
+   <label style="margin-top:14px">Tìm kiếm sản phẩm</label>
+   <input id="psearch" placeholder="Gõ tên sản phẩm hoặc mã vạch">
+   <div id="plist"></div>
+  </div>
  </section>
 
  <!-- ===== BÁO CÁO / LỊCH SỬ ===== -->
@@ -274,7 +287,7 @@ table.tb th:first-child,table.tb td:first-child{text-align:left}
 <div id="printArea"></div>
 
 <script>
-const APP_VER='2.1 (30/10/2026)';
+const APP_VER='2.2 (30/10/2026)';
 const KEY='banhang.v1', LOCAL='banhang.local', SYNC='banhang.sync';
 const LISTS=['products','orders','stockIns','groups'];
 const $=id=>document.getElementById(id);
@@ -676,44 +689,74 @@ $('rcptPrint').onclick=()=>{
 };
 
 /* ================= SẢN PHẨM ================= */
+const PAGE=20;
+let psPage=1;
+function pagerHtml(total,page,key){
+  const pages=Math.ceil(total/PAGE);if(pages<=1)return '';
+  let h='<div class="pager">';
+  for(let i=1;i<=pages;i++)h+=`<button class="sm${i===page?' on':''}" data-${key}="${i}">${i}</button>`;
+  return h+'</div>';
+}
+const clampPage=(page,total)=>Math.min(Math.max(1,page),Math.max(1,Math.ceil(total/PAGE)));
+function prodRow(p,sm){
+  const s=stockOf(p,sm);
+  const parts=[money(p.price)];
+  if(hasNum(p.cost))parts.push('vốn '+money(p.cost));
+  if(s!==null)parts.push(s<=LOW?`<span class="warn">tồn ${s}</span>`:'tồn '+s);
+  const gl=groupLabel(p);if(gl)parts.push('nhóm '+esc(gl));
+  if(p.barcode)parts.push(esc(p.barcode));
+  return `<div class="line"><div style="flex:1;min-width:0"><b>${esc(p.name)}</b><div class="muted">${parts.join(' · ')}</div></div><button class="sm" data-e="${p.id}">Sửa</button><button class="sm danger" data-x="${p.id}">Xóa</button></div>`;
+}
+const byName=(a,b)=>a.name.localeCompare(b.name,'vi');
 function renderProducts(){
   const sm=stockMap();
+  const ps=prods();
+  // Thống kê: tồn = tổng tồn các sản phẩm có theo dõi tồn kho (số âm tính là 0)
+  const totalStock=ps.reduce((t,p)=>p.track?t+Math.max(0,sm[p.id]||0):t,0);
+  $('pstats').innerHTML=`Nhóm: <b>${groupsSorted().length}</b> | Sản phẩm: <b>${ps.length}</b> | Tồn: <b>${fmtNum(totalStock)}</b>`;
+  // Tìm kiếm sản phẩm
   const q=norm($('psearch').value.trim());
-  const list=prods().filter(p=>!q||norm(p.name).includes(q)||(p.barcode||'').includes(q)).sort((a,b)=>a.name.localeCompare(b.name,'vi'));
-  $('plist').innerHTML=list.length?list.map(p=>{
-    const s=stockOf(p,sm);
-    const parts=[money(p.price)];
-    if(hasNum(p.cost))parts.push('vốn '+money(p.cost));
-    if(s!==null)parts.push(s<=LOW?`<span class="warn">tồn ${s}</span>`:'tồn '+s);
-    const gl=groupLabel(p);if(gl)parts.push('nhóm '+esc(gl));
-    if(p.barcode)parts.push(esc(p.barcode));
-    return `<div class="card line"><div style="flex:1;min-width:0"><b>${esc(p.name)}</b><div class="muted">${parts.join(' · ')}</div></div><button class="sm" data-e="${p.id}">Sửa</button> <button class="sm danger" data-x="${p.id}">Xóa</button></div>`;
-  }).join(''):'<p class="muted">'+(q?'Không tìm thấy sản phẩm.':'Chưa có sản phẩm.')+'</p>';
-  const low=prods().filter(p=>p.track&&(sm[p.id]||0)<=LOW).sort((a,b)=>(sm[a.id]||0)-(sm[b.id]||0));
+  if(!q)$('plist').innerHTML='';
+  else{
+    const list=ps.filter(p=>norm(p.name).includes(q)||(p.barcode||'').includes(q)).sort(byName);
+    psPage=clampPage(psPage,list.length);
+    $('plist').innerHTML=list.length
+      ?`<p class="muted" style="margin:8px 0 0">Tìm thấy ${list.length} sản phẩm</p>`+list.slice((psPage-1)*PAGE,psPage*PAGE).map(p=>prodRow(p,sm)).join('')+pagerHtml(list.length,psPage,'psp')
+      :'<p class="muted" style="margin:8px 0 0">Không tìm thấy sản phẩm.</p>';
+  }
+  // Sắp hết hàng
+  const low=ps.filter(p=>p.track&&(sm[p.id]||0)<=LOW).sort((a,b)=>(sm[a.id]||0)-(sm[b.id]||0));
   $('lowCard').style.display=low.length?'':'none';
-  $('lowList').innerHTML=low.map(p=>`<div class="line"><span>${esc(p.name)}</span><b class="warn">${sm[p.id]||0}</b></div>`).join('');
+  $('lowList').innerHTML=low.slice(0,5).map(p=>`<div class="line"><span>${esc(p.name)}</span><b class="warn">${sm[p.id]||0}</b></div>`).join('')+(low.length>5?`<p class="muted" style="margin:6px 0 0">và ${low.length-5} sản phẩm khác (tìm theo tên để xem tồn)</p>`:'');
   fillGroupSel();renderGroups();
 }
-$('psearch').oninput=renderProducts;
-$('plist').onclick=e=>{
-  const ed=e.target.dataset.e,x=e.target.dataset.x;
-  if(ed){
-    const p=findP(ed);if(!p)return;
+$('psearch').oninput=()=>{psPage=1;renderProducts();};
+// Bấm trong danh sách sản phẩm (kết quả tìm kiếm và sản phẩm trong nhóm)
+function prodClick(e){
+  const t=e.target.closest('button');if(!t)return;
+  const d=t.dataset;
+  if(d.psp){psPage=+d.psp;renderProducts();return;}
+  if(d.gpp){gpPage=+d.gpp;renderGroupProducts();return;}
+  if(d.gclose){gSel=null;renderGroups();return;}
+  if(d.e){
+    const p=findP(d.e);if(!p)return;
     $('pid').value=p.id;$('pname').value=p.name;$('pprice').value=fmtNum(p.price);
     $('pcost').value=hasNum(p.cost)?fmtNum(p.cost):'';
-    $('pstock').value=p.track?fmtNum(stockOf(p)):'';
-    if(p.track&&stockOf(p)<0)$('pstock').value='-'+fmtNum(-stockOf(p));
+    const st=p.track?stockOf(p):null;
+    $('pstock').value=st===null?'':(st<0?'-'+fmtNum(-st):fmtNum(st));
     $('pbar').value=p.barcode||'';
     fillGroupSel(validGroup(p.group));
     window.scrollTo(0,0);
   }
-  if(x){
-    const p=findP(x);
+  if(d.x){
+    const p=findP(d.x);
     if(p&&confirm('Xóa sản phẩm "'+p.name+'"? Các đơn cũ vẫn giữ nguyên.')){
       p.deleted=true;touch(p);save();renderProducts();renderPick();
     }
   }
-};
+}
+$('plist').onclick=prodClick;
+$('gprods').onclick=prodClick;
 function resetPForm(){['pid','pname','pprice','pcost','pstock','pbar'].forEach(id=>$(id).value='');fillGroupSel('');}
 $('preset').onclick=resetPForm;
 $('psave').onclick=()=>{
@@ -745,38 +788,55 @@ $('psave').onclick=()=>{
 /* ================= NHÓM SẢN PHẨM ================= */
 // Nhóm "Không" (mặc định) và "Khác" có sẵn; các nhóm khác do bạn thêm, xếp theo ABC.
 const GKHAC='khac';
-let gEditId=null,gExpanded=false,gPage=1;
-const groupsSorted=()=>db.groups.filter(g=>!g.deleted).sort((a,b)=>a.name.localeCompare(b.name,'vi'));
+let gEditId=null,gPage=1,gsPage=1,gSel=null,gpPage=1;
+const groupsSorted=()=>db.groups.filter(g=>!g.deleted).sort(byName);
 function validGroup(id){if(id===GKHAC)return GKHAC;return id&&db.groups.some(g=>g.id===id&&!g.deleted)?id:'';}
 function groupLabel(p){const v=validGroup(p.group);if(v===GKHAC)return 'Khác';if(!v)return '';return db.groups.find(g=>g.id===v).name;}
+function groupName(id){if(id==='')return 'Không';if(id===GKHAC)return 'Khác';const g=db.groups.find(x=>x.id===id&&!x.deleted);return g?g.name:null;}
 function fillGroupSel(sel){
   const el=$('pgroup');const cur=sel===undefined?el.value:sel;
   el.innerHTML='<option value="">Không</option>'+groupsSorted().map(g=>`<option value="${g.id}">${esc(g.name)}</option>`).join('')+'<option value="khac">Khác</option>';
   el.value=validGroup(cur);
 }
 function groupCounts(){const c={};prods().forEach(p=>{const v=validGroup(p.group);c[v]=(c[v]||0)+1;});return c;}
+function groupTable(list,cnt){
+  return `<table class="tb gt"><tr><th>Tên nhóm</th><th>Số lượng</th><th>Sửa</th><th>Xóa</th></tr>${list.map(g=>`<tr${g.id===gSel?' class="sel"':''}><td><button class="glink" data-gopen="${g.id}">${esc(g.name)}</button></td><td>${cnt[g.id]||0}</td><td><button class="sm" data-ge="${g.id}">Sửa</button></td><td><button class="sm danger" data-gx="${g.id}">Xóa</button></td></tr>`).join('')}</table>`;
+}
 function renderGroups(){
   const gs=groupsSorted(),cnt=groupCounts();
-  const SHORT=10,PER=30;
-  let html='';
-  if(!gs.length)html='<p class="muted" style="margin:0">Chưa có nhóm nào.</p>';
-  else{
-    const pages=Math.ceil(gs.length/PER);
-    if(gPage>pages)gPage=pages;
-    const rows=gExpanded?gs.slice((gPage-1)*PER,gPage*PER):gs.slice(0,SHORT);
-    html=`<table class="tb"><tr><th>Tên nhóm</th><th>Số lượng</th><th>Sửa</th><th>Xóa</th></tr>${rows.map(g=>`<tr><td>${esc(g.name)}</td><td>${cnt[g.id]||0}</td><td><button class="sm" data-ge="${g.id}">Sửa</button></td><td><button class="sm danger" data-gx="${g.id}">Xóa</button></td></tr>`).join('')}</table>`;
-    if(!gExpanded&&gs.length>SHORT)html+=`<button class="sm" data-gmore="1" style="width:100%;margin-top:8px">Xem thêm (còn ${gs.length-SHORT} nhóm)</button>`;
-    if(gExpanded){
-      if(pages>1){html+='<div class="pager">';for(let i=1;i<=pages;i++)html+=`<button class="sm${i===gPage?' on':''}" data-gp="${i}">${i}</button>`;html+='</div>';}
-      html+=`<button class="sm" data-gless="1" style="width:100%;margin-top:8px">Thu gọn</button>`;
-    }
-  }
+  // Danh sách nhóm: 20 nhóm mỗi trang
+  gPage=clampPage(gPage,gs.length);
+  let html=gs.length?groupTable(gs.slice((gPage-1)*PAGE,gPage*PAGE),cnt)+pagerHtml(gs.length,gPage,'gp')
+    :'<p class="muted" style="margin:0">Chưa có nhóm nào.</p>';
   const other=[];
-  if(cnt[''])other.push('Không: '+cnt['']);
-  if(cnt[GKHAC])other.push('Khác: '+cnt[GKHAC]);
+  if(cnt[''])other.push(`<button class="glink" data-gopen="_none">Không</button>: ${cnt['']}`);
+  if(cnt[GKHAC])other.push(`<button class="glink" data-gopen="khac">Khác</button>: ${cnt[GKHAC]}`);
   if(other.length)html+=`<p class="muted" style="margin:8px 0 0">Sản phẩm chưa phân nhóm — ${other.join(' · ')}</p>`;
   $('glist').innerHTML=html;
+  // Tìm kiếm nhóm
+  const gq=norm($('gsearch').value.trim());
+  if(!gq)$('gsres').innerHTML='';
+  else{
+    const list=gs.filter(g=>norm(g.name).includes(gq));
+    gsPage=clampPage(gsPage,list.length);
+    $('gsres').innerHTML=list.length
+      ?`<p class="muted" style="margin:8px 0 4px">Tìm thấy ${list.length} nhóm — bấm tên nhóm để xem sản phẩm</p>`+groupTable(list.slice((gsPage-1)*PAGE,gsPage*PAGE),cnt)+pagerHtml(list.length,gsPage,'gsp')
+      :'<p class="muted" style="margin:8px 0 0">Không tìm thấy nhóm.</p>';
+  }
+  renderGroupProducts();
 }
+// Sản phẩm trong nhóm đang chọn: 20 sản phẩm mỗi trang
+function renderGroupProducts(){
+  if(gSel===null){$('gprods').innerHTML='';return;}
+  const name=groupName(gSel);
+  if(name===null){gSel=null;$('gprods').innerHTML='';return;}
+  const sm=stockMap();
+  const list=prods().filter(p=>validGroup(p.group)===gSel).sort(byName);
+  gpPage=clampPage(gpPage,list.length);
+  $('gprods').innerHTML=`<div class="gpanel"><div class="line" style="border:0;padding-top:0"><b>Nhóm ${esc(name)}: ${list.length} sản phẩm</b><button class="sm" data-gclose="1">Đóng</button></div>`
+    +(list.length?list.slice((gpPage-1)*PAGE,gpPage*PAGE).map(p=>prodRow(p,sm)).join('')+pagerHtml(list.length,gpPage,'gpp'):'<p class="muted" style="margin:0">Nhóm chưa có sản phẩm.</p>')+'</div>';
+}
+$('gsearch').oninput=()=>{gsPage=1;renderGroups();};
 function endGroupEdit(){gEditId=null;$('gname').value='';$('gsave').textContent='Thêm nhóm';$('gcancel').style.display='none';}
 $('gcancel').onclick=endGroupEdit;
 $('gname').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('gsave').click();}});
@@ -790,23 +850,32 @@ $('gsave').onclick=()=>{
   else db.groups.push(touch({id:uid(),name}));
   endGroupEdit();save();renderProducts();
 };
-$('glist').onclick=e=>{
-  const d=e.target.dataset||{};
-  if(d.gmore){gExpanded=true;gPage=1;renderGroups();}
-  else if(d.gless){gExpanded=false;renderGroups();}
+function groupClick(e){
+  const t=e.target.closest('button');if(!t)return;
+  const d=t.dataset;
+  if(d.gopen!==undefined){
+    const id=d.gopen==='_none'?'':d.gopen;
+    if(gSel===id)gSel=null;else{gSel=id;gpPage=1;}
+    renderGroups();
+    if(gSel!==null)$('gprods').scrollIntoView({behavior:'smooth',block:'nearest'});
+  }
   else if(d.gp){gPage=+d.gp;renderGroups();}
+  else if(d.gsp){gsPage=+d.gsp;renderGroups();}
   else if(d.ge){
     const g=db.groups.find(x=>x.id===d.ge);if(!g)return;
-    gEditId=g.id;$('gname').value=g.name;$('gsave').textContent='Lưu tên';$('gcancel').style.display='';$('gname').focus();
+    gEditId=g.id;$('gname').value=g.name;$('gsave').textContent='Lưu tên';$('gcancel').style.display='';
+    $('gname').scrollIntoView({behavior:'smooth',block:'center'});$('gname').focus();
   }
   else if(d.gx){
     const g=db.groups.find(x=>x.id===d.gx);if(!g)return;
     const n=groupCounts()[g.id]||0;
     if(!confirm('Xóa nhóm "'+g.name+'"?'+(n?'\n'+n+' sản phẩm trong nhóm sẽ chuyển về "Không".':'')))return;
-    g.deleted=true;touch(g);if(gEditId===g.id)endGroupEdit();
+    g.deleted=true;touch(g);if(gEditId===g.id)endGroupEdit();if(gSel===g.id)gSel=null;
     save();renderProducts();
   }
-};
+}
+$('glist').onclick=groupClick;
+$('gsres').onclick=groupClick;
 
 /* ================= QUÉT MÃ ================= */
 let scanMode='',scanStream=null,scanTimer=null,scanBusy=false,detector=null,lastHit='',hitCount=0;
