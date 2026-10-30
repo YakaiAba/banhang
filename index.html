@@ -22,6 +22,16 @@ table.tb.gt td:first-child,table.tb.gt th:first-child{text-align:left}
 table.gt tr.sel td{background:#fff3e0}
 .glink{border:0;background:none;padding:2px 0;color:#d35400;text-decoration:underline;font-size:15px;text-align:left}
 .gpanel{margin-top:10px;background:#fafafa;border:1px solid #eee;border-radius:10px;padding:8px 10px}
+/* thanh toán */
+.opt{width:100%;background:#fff;border:2px solid #f26a1b;color:#f26a1b;font-weight:600;margin-top:8px}
+.opt.on{background:#fff3e0}
+.paybox{border:1px solid #f0d0b8;border-radius:10px;padding:8px 10px;margin:8px 0 0;text-align:left;background:#fffaf5}
+.paybox.hide{display:none}
+.prow{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 0}
+.prow input,.prow select{width:58%;text-align:right}
+.prow b{font-size:17px}
+.quick{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;padding-bottom:4px}
+.badge{font-size:11px;background:#c62828;color:#fff;border-radius:6px;padding:1px 5px;vertical-align:middle;font-weight:500}
 .stats{margin-top:4px;padding:8px;background:#f7f7f9;border-radius:8px;text-align:center;font-size:15px}
 main{padding:12px;max-width:900px;margin:0 auto}
 .tab{display:none}.tab.on{display:block}
@@ -165,12 +175,24 @@ table.tb th:first-child,table.tb td:first-child{text-align:left}
    <div class="sum" style="margin-top:8px"><span>Số đơn</span><span id="hcount"></span></div>
    <div class="sum"><span>Tiền mặt</span><span id="hcash"></span></div>
    <div class="sum"><span>Chuyển khoản</span><span id="hbank"></span></div>
+   <div class="sum"><span>Còn nợ</span><span id="hdebt"></span></div>
    <div class="sum total"><span>Doanh thu</span><span id="hrev"></span></div>
    <div class="sum"><span>Giá vốn</span><span id="hcost"></span></div>
    <div class="sum" style="font-weight:600"><span>Lãi gộp</span><span id="hprofit"></span></div>
    <div class="muted" id="hnote"></div>
   </div>
   <div class="card"><h3 id="chartTitle"></h3><div id="chart"></div></div>
+  <div class="card" id="debtCard">
+   <h3>Lưu nợ</h3>
+   <div class="sum" style="font-size:18px;font-weight:700"><span>Tiền chưa thu</span><span id="debtTotalAll" class="warn"></span></div>
+   <div class="muted" id="debtSummary"></div>
+   <div class="row" style="margin:10px 0 0"><span style="flex:1;font-size:14px">Cảnh báo nợ quá (ngày)</span><input id="debtDays" inputmode="numeric" style="width:80px;text-align:center"></div>
+   <button id="debtToggle" style="width:100%;margin-top:8px">Hiện danh sách</button>
+   <div id="debtListBox" style="display:none">
+    <select id="debtSort" style="margin-top:8px"><option value="new">Lưu nợ mới nhất</option><option value="old">Lưu nợ cũ nhất</option><option value="most">Lưu nợ nhiều nhất</option><option value="least">Lưu nợ ít nhất</option></select>
+    <div id="debtList"></div>
+   </div>
+  </div>
   <div class="card"><h3>Bán chạy nhất trong kỳ</h3><div id="topList"></div></div>
   <h2>Danh sách đơn</h2>
   <div id="hlist"></div>
@@ -263,13 +285,46 @@ table.tb th:first-child,table.tb td:first-child{text-align:left}
  <div class="card modal">
   <b>Thanh toán</b>
   <div id="payTotal" style="font-size:22px;color:#f26a1b;font-weight:700;margin:6px 0"></div>
-  <img id="payQR" alt="Mã QR chuyển khoản" style="width:100%;max-width:280px;display:none;margin:0 auto">
-  <p id="payErr" style="display:none;color:#c62828;font-size:14px;margin:6px 0"></p>
-  <p id="payBankInfo" style="font-size:14px;text-align:left;margin:6px 0"></p>
-  <p class="muted" id="payNote"></p>
-  <button class="primary" id="payCash" style="margin-bottom:8px">Đã thanh toán tiền mặt</button>
-  <button class="green" id="payBank">Đã thanh toán chuyển khoản</button>
+  <div id="payQRBox">
+   <img id="payQR" alt="Mã QR chuyển khoản" style="width:100%;max-width:280px;display:none;margin:0 auto">
+   <p id="payErr" style="display:none;color:#c62828;font-size:14px;margin:6px 0"></p>
+   <p id="payBankInfo" style="font-size:14px;text-align:left;margin:6px 0"></p>
+   <p class="muted" id="payNote"></p>
+  </div>
+  <button class="opt" id="payCashOpen">Thanh toán tiền mặt</button>
+  <div class="paybox hide" id="cashBox">
+   <div class="prow"><span>Tiền nhận</span><input id="cashGiven" inputmode="numeric" placeholder="Khách đưa"></div>
+   <div class="quick" id="cashQuick"></div>
+   <div class="prow"><span>Tiền thanh toán</span><b id="cashTotal"></b></div>
+   <div class="prow"><span>Tiền thừa</span><b id="cashChange"></b></div>
+   <button class="primary" id="payCash" style="margin-top:6px">Đã thanh toán tiền mặt</button>
+  </div>
+  <button class="green" id="payBank" style="margin-top:8px">Đã thanh toán chuyển khoản</button>
+  <button class="opt" id="payDebtOpen">Lưu nợ</button>
+  <div class="paybox hide" id="debtBox">
+   <div class="prow"><span>Tên khách</span><input id="debtName" placeholder="Bắt buộc" style="text-align:left"></div>
+   <div class="prow"><span>Thanh toán trước</span><input id="debtPre" inputmode="numeric" value="0"></div>
+   <div class="prow" id="debtPreMRow"><span>Trả trước bằng</span><select id="debtPreM"><option value="cash">Tiền mặt</option><option value="bank">Chuyển khoản</option></select></div>
+   <div class="prow"><span>Tiền thanh toán</span><b id="debtTotal"></b></div>
+   <div class="prow"><span>Lưu nợ</span><b id="debtRemain" class="warn"></b></div>
+   <button class="primary" id="payDebt" style="margin-top:6px">Xác nhận lưu nợ</button>
+  </div>
   <button id="payBack" style="width:100%;margin-top:8px">Quay lại</button>
+ </div>
+</div>
+
+<div class="overlay dim hide" id="collectModal">
+ <div class="card modal">
+  <b>Thu nợ</b>
+  <div id="colInfo" style="text-align:left;font-size:14px;margin:8px 0"></div>
+  <div class="prow" style="text-align:left"><span>Số tiền thu</span><input id="colAmt" inputmode="numeric"></div>
+  <div id="colQRBox" style="position:relative;height:220px;margin-top:8px;display:none">
+   <img id="colQR" alt="Mã QR chuyển khoản" style="height:100%;max-width:100%;display:block;margin:0 auto;visibility:hidden">
+   <p id="colErr" style="position:absolute;left:0;right:0;top:80px;display:none;color:#c62828;font-size:14px;margin:0"></p>
+  </div>
+  <button class="primary" id="colCash" style="margin-top:8px">Đã thu tiền mặt</button>
+  <button class="green" id="colBank" style="margin-top:8px">Đã thu chuyển khoản</button>
+  <button id="colBack" style="width:100%;margin-top:8px">Quay lại</button>
  </div>
 </div>
 
@@ -287,7 +342,7 @@ table.tb th:first-child,table.tb td:first-child{text-align:left}
 <div id="printArea"></div>
 
 <script>
-const APP_VER='2.2 (30/10/2026)';
+const APP_VER='2.3 (30/10/2026)';
 const KEY='banhang.v1', LOCAL='banhang.local', SYNC='banhang.sync';
 const LISTS=['products','orders','stockIns','groups'];
 const $=id=>document.getElementById(id);
@@ -299,7 +354,8 @@ const hasNum=v=>String(v??'').replace(/\D/g,'')!=='';
 const pct=v=>parseFloat(String(v||'').replace(',','.'))||0;
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 const dayKey=d=>{const x=new Date(d);return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0');};
-const methodName=m=>m==='cash'?'Tiền mặt':m==='bank'?'Chuyển khoản':'—';
+const methodName=m=>m==='cash'?'Tiền mặt':m==='bank'?'Chuyển khoản':m==='debt'?'Lưu nợ':'—';
+const fmtD=t=>new Date(t).toLocaleDateString('vi-VN',{day:'2-digit',month:'2-digit',year:'numeric'});
 // Bỏ dấu tiếng Việt để tìm kiếm
 const norm=s=>String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/đ/g,'d').replace(/Đ/g,'D').toLowerCase();
 
@@ -355,7 +411,7 @@ function updateHint(){$('orderInfo').placeholder='Ví dụ: '+nextCode()+' - Tê
 // Giá: tự thêm dấu chấm hàng nghìn khi gõ
 ['pprice','pcost','pstock'].forEach(id=>$(id).addEventListener('input',()=>{const el=$(id);const d=el.value.replace(/\D/g,'');el.value=d?fmtNum(+d):'';}));
 // Bấm vào ô số: xóa sẵn để gõ mới; bỏ trống rồi rời ô thì trả lại giá trị cũ
-const CLEAR_SEL='#discVal,#vatPct,#pprice,#pcost,#pstock,.xp,.qin';
+const CLEAR_SEL='#discVal,#vatPct,#pprice,#pcost,#pstock,.xp,.qin,#cashGiven,#debtPre,#colAmt,#debtDays';
 document.addEventListener('focusin',e=>{
   const el=e.target;if(!el.matches||!el.matches(CLEAR_SEL))return;
   el.dataset.old=el.value;el.value='';
@@ -365,6 +421,9 @@ document.addEventListener('focusout',e=>{
   if(el.value.trim()===''&&el.dataset.old){
     el.value=el.dataset.old;
     if(el.id==='discVal'||el.id==='vatPct')totals();
+    if(el.id==='cashGiven')updCash();
+    if(el.id==='debtPre')updDebt();
+    if(el.id==='colAmt')updColQR();
   }
   delete el.dataset.old;
 });
@@ -515,6 +574,57 @@ function bankHtml(b){
   const bn=[...document.querySelectorAll('#bankSel option')].find(o=>o.value===b.bin)?.textContent||'';
   return 'Ngân hàng: <b>'+esc(bn)+'</b><br>Số tài khoản: <b>'+esc(b.acc)+'</b><br>Chủ tài khoản: <b>'+esc(b.name||'—')+'</b>';
 }
+function bankQRSrc(amount,content){
+  const b=db.bank;if(!b)return null;
+  if(b.qr)return b.qr;
+  if(b.bin&&b.acc)return 'https://img.vietqr.io/image/'+b.bin+'-'+encodeURIComponent(b.acc)+'-compact2.png?amount='+Math.round(amount)+'&addInfo='+encodeURIComponent(content)+'&accountName='+encodeURIComponent(b.name||'');
+  return null;
+}
+function showQR(img,errEl,src){
+  if(errEl)errEl.style.display='none';
+  if(!src){img.style.display='none';img.removeAttribute('src');return;}
+  img.onerror=()=>{img.style.display='none';if(errEl){errEl.textContent='Không tải được mã QR. Kiểm tra kết nối mạng, hoặc khách chuyển theo số tài khoản.';errEl.style.display='block';}};
+  img.onload=()=>{if(errEl)errEl.style.display='none';};
+  img.src=src;img.style.display='block';
+}
+// Nợ: đã trả = trả trước + các lần thu nợ
+const paidOf=o=>o.method==='debt'?(+o.prepaid||0)+(o.payments||[]).reduce((s,p)=>s+(+p.amount||0),0):(+o.total||0);
+const debtLeft=o=>o.method==='debt'?Math.max(0,(+o.total||0)-paidOf(o)):0;
+function payMode(m){
+  $('cashBox').classList.toggle('hide',m!=='cash');
+  $('debtBox').classList.toggle('hide',m!=='debt');
+  $('payCashOpen').classList.toggle('on',m==='cash');
+  $('payDebtOpen').classList.toggle('on',m==='debt');
+  $('payQRBox').style.display=m?'none':'';
+  if(m==='cash')updCash();
+  if(m==='debt')updDebt();
+  if(m)setTimeout(()=>$(m==='cash'?'cashBox':'debtBox').scrollIntoView({block:'nearest',behavior:'smooth'}),50);
+}
+function quickCash(total){
+  const out=[total];
+  [10000,50000,100000].forEach(u=>out.push(Math.ceil(total/u)*u));
+  out.push(200000,500000);
+  return [...new Set(out)].filter(v=>v>=total&&v>0).sort((a,b)=>a-b).slice(0,5);
+}
+function updCash(){
+  if(!pending)return;
+  const tot=pending.t.total;
+  const g=hasNum($('cashGiven').value)?numOf($('cashGiven').value):tot;
+  const ch=g-tot;
+  $('cashChange').textContent=ch>=0?money(ch):'Thiếu '+money(-ch);
+  $('cashChange').className=ch<0?'warn':'good';
+}
+function updDebt(){
+  if(!pending)return;
+  const tot=pending.t.total;
+  const pre=Math.min(numOf($('debtPre').value),tot);
+  $('debtRemain').textContent=money(tot-pre);
+  $('debtPreMRow').style.display=pre>0?'':'none';
+}
+function moneyInput(id,after){$(id).addEventListener('input',()=>{const d=$(id).value.replace(/\D/g,'');$(id).value=d?fmtNum(+d):'';after&&after();});}
+moneyInput('cashGiven',updCash);
+moneyInput('debtPre',updDebt);
+$('cashQuick').onclick=e=>{const b=e.target.closest('button[data-cq]');if(!b)return;$('cashGiven').value=fmtNum(+b.dataset.cq);updCash();};
 $('pay').onclick=()=>{
   if(!cart.length)return alert('Chưa có món nào');
   if(!editingId&&!local.device&&!local.askedDevice){
@@ -528,28 +638,49 @@ $('pay').onclick=()=>{
   const code=old?old.code:nextCode();
   pending={t,code,info};
   $('payTotal').textContent=money(t.total);
-  const b=db.bank;
-  $('payErr').style.display='none';
-  const content=info||code;
-  if(b&&b.qr){
-    $('payQR').onerror=null;$('payQR').onload=null;
-    $('payQR').src=b.qr;$('payQR').style.display='block';
+  $('cashTotal').textContent=money(t.total);
+  $('debtTotal').textContent=money(t.total);
+  // Mã QR chuyển khoản
+  const content=info||code,b=db.bank;
+  showQR($('payQR'),$('payErr'),bankQRSrc(t.total,content));
+  if(b&&(b.acc||b.qr)){
     $('payBankInfo').innerHTML=b.acc?bankHtml(b):'';
-    $('payNote').textContent='Số tiền: '+money(t.total)+'. Nội dung chuyển khoản: '+content;
-  }else if(b&&b.bin&&b.acc){
-    $('payBankInfo').innerHTML=bankHtml(b);
-    $('payQR').onerror=()=>{$('payQR').style.display='none';$('payErr').textContent='Không tải được mã QR. Kiểm tra kết nối mạng, hoặc khách chuyển theo số tài khoản phía trên.';$('payErr').style.display='block';};
-    $('payQR').onload=()=>{$('payErr').style.display='none';};
-    $('payQR').src='https://img.vietqr.io/image/'+b.bin+'-'+encodeURIComponent(b.acc)+'-compact2.png?amount='+Math.round(t.total)+'&addInfo='+encodeURIComponent(content)+'&accountName='+encodeURIComponent(b.name||'');
-    $('payQR').style.display='block';
-    $('payNote').textContent='Nội dung chuyển khoản: '+content;
+    $('payNote').textContent=(b.qr?'Số tiền: '+money(t.total)+'. ':'')+'Nội dung chuyển khoản: '+content;
   }else{
-    $('payQR').style.display='none';$('payBankInfo').textContent='';
+    $('payBankInfo').textContent='';
     $('payNote').textContent='Chưa cài tài khoản ngân hàng. Vào tab Cài đặt để nhập, hoặc chọn tiền mặt.';
   }
+  // Giá trị mặc định
+  $('cashGiven').value=old&&old.method==='cash'&&old.cashGiven?fmtNum(old.cashGiven):'';
+  $('cashQuick').innerHTML=quickCash(t.total).map(v=>`<button class="sm" data-cq="${v}">${v===t.total?'Đủ tiền':fmtNum(v)}</button>`).join('');
+  const wasDebt=old&&old.method==='debt';
+  $('debtName').value=wasDebt&&old.customer?old.customer:info;
+  $('debtPre').value=fmtNum(wasDebt?(old.prepaid||0):0);
+  $('debtPreM').value=wasDebt&&old.prepaidMethod==='bank'?'bank':'cash';
+  payMode(old&&(old.method==='cash'||old.method==='debt')?old.method:'');
   $('payModal').classList.remove('hide');
 };
-function finishPay(method){
+$('payCashOpen').onclick=()=>payMode($('cashBox').classList.contains('hide')?'cash':'');
+$('payDebtOpen').onclick=()=>payMode($('debtBox').classList.contains('hide')?'debt':'');
+$('payCash').onclick=()=>{
+  if(!pending)return;
+  const tot=pending.t.total;
+  const g=hasNum($('cashGiven').value)?numOf($('cashGiven').value):tot;
+  if(g<tot)return alert('Khách đưa thiếu '+money(tot-g)+'. Nếu khách nợ phần còn lại, chọn "Lưu nợ".');
+  finishPay('cash',{cashGiven:g});
+};
+$('payBank').onclick=()=>finishPay('bank',{});
+$('payDebt').onclick=()=>{
+  if(!pending)return;
+  const name=$('debtName').value.trim();
+  if(!name){alert('Nhập tên khách nợ');$('debtName').focus();return;}
+  const tot=pending.t.total,pre=numOf($('debtPre').value);
+  if(pre>=tot)return alert('Tiền trả trước đã đủ tổng đơn. Hãy chọn thanh toán tiền mặt hoặc chuyển khoản.');
+  const ex={customer:name.slice(0,60),prepaid:pre};
+  if(pre>0)ex.prepaidMethod=$('debtPreM').value;
+  finishPay('debt',ex);
+};
+function finishPay(method,extra){
   if(!pending)return;
   const {t,code,info}=pending;
   const now=Date.now();
@@ -560,11 +691,15 @@ function finishPay(method){
     else if(c.cost!=null)it.cost=c.cost;
     return it;
   });
-  const fields={code,info,method,items,subtotal:t.sub,discType:t.dtype,discPct:t.dp,discAmt:t.dsc,vatPct:t.vp,vat:t.vat,total:t.total};
+  const fields={code,info,method,items,subtotal:t.sub,discType:t.dtype,discPct:t.dp,discAmt:t.dsc,vatPct:t.vp,vat:t.vat,total:t.total,...extra};
   let o;
   if(editingId){
     o=db.orders.find(x=>x.id===editingId);
-    Object.assign(o,fields,{edited:new Date().toISOString(),editedBy:local.device||''});touch(o);
+    const keepPays=method==='debt'?(o.payments||[]):[];
+    ['cashGiven','prepaid','prepaidMethod','customer','payments'].forEach(k=>delete o[k]);
+    Object.assign(o,fields,{edited:new Date().toISOString(),editedBy:local.device||''});
+    if(keepPays.length)o.payments=keepPays;
+    touch(o);
   }else{
     o=touch({id:uid(),time:new Date().toISOString(),by:local.device||'',...fields});
     db.orders.push(o);
@@ -575,11 +710,59 @@ function finishPay(method){
   $('payModal').classList.add('hide');
   $('payQR').removeAttribute('src');$('payErr').style.display='none';
   clearOrder();renderPick();
-  showReceipt(o,(wasEdit?'Đã cập nhật đơn ':'Đã lưu đơn ')+code,money(t.total)+' · '+methodName(method));
+  let title=(wasEdit?'Đã cập nhật đơn ':'Đã lưu đơn ')+code,sub=money(t.total)+' · '+methodName(method);
+  if(method==='cash'&&extra.cashGiven>t.total)sub+=' · tiền thừa '+money(extra.cashGiven-t.total);
+  if(method==='debt')sub=esc(o.customer)+' · còn nợ '+money(debtLeft(o));
+  showReceipt(o,title,sub);
 }
-$('payCash').onclick=()=>finishPay('cash');
-$('payBank').onclick=()=>finishPay('bank');
 $('payBack').onclick=()=>{pending=null;$('payModal').classList.add('hide');};
+
+/* ================= THU NỢ ================= */
+let colId=null;
+function openCollect(id){
+  const o=db.orders.find(x=>x.id===id&&!x.deleted);if(!o)return;
+  const left=debtLeft(o);if(left<=0)return alert('Đơn này đã trả hết nợ.');
+  colId=id;
+  const pays=(o.payments||[]).map(p=>`<div class="sum muted"><span>Trả ${fmtD(p.time)} (${methodName(p.method)})</span><span>${money(p.amount)}</span></div>`).join('');
+  $('colInfo').innerHTML=`<div class="sum"><span>Khách</span><b>${esc(o.customer||o.info||'—')}</b></div>
+    <div class="sum"><span>Đơn</span><span>${esc(o.code||'')} · ${fmtD(o.time)}</span></div>
+    <div class="sum"><span>Tổng đơn</span><span>${money(o.total)}</span></div>
+    <div class="sum"><span>Trả trước</span><span>${money(o.prepaid||0)}</span></div>${pays}
+    <div class="sum total"><span>Còn nợ</span><span>${money(left)}</span></div>`;
+  $('colAmt').value=fmtNum(left);
+  updColQR();
+  $('collectModal').classList.remove('hide');
+}
+function updColQR(){
+  const o=db.orders.find(x=>x.id===colId);if(!o)return;
+  // Khung QR giữ cố định chiều cao để nút bấm bên dưới không bị nhảy chỗ
+  const box=$('colQRBox'),img=$('colQR'),err=$('colErr');
+  if(!bankQRSrc(1,'')){box.style.display='none';return;}
+  box.style.display='';err.style.display='none';
+  const a=Math.min(numOf($('colAmt').value),debtLeft(o));
+  const src=a>0?bankQRSrc(a,'Tra no '+(o.code||'')):null;
+  if(!src){img.style.visibility='hidden';return;}
+  img.onerror=()=>{img.style.visibility='hidden';err.textContent='Không tải được mã QR. Kiểm tra mạng, hoặc khách chuyển theo số tài khoản.';err.style.display='block';};
+  img.onload=()=>{img.style.visibility='visible';err.style.display='none';};
+  if(img.getAttribute('src')!==src){img.style.visibility='hidden';img.src=src;}
+}
+moneyInput('colAmt');
+$('colAmt').addEventListener('change',updColQR);
+function collect(method){
+  const o=db.orders.find(x=>x.id===colId&&!x.deleted);if(!o)return;
+  const left=debtLeft(o),a=numOf($('colAmt').value);
+  if(a<=0)return alert('Nhập số tiền thu');
+  if(a>left)return alert('Số tiền thu lớn hơn số còn nợ ('+money(left)+').');
+  o.payments=(o.payments||[]).concat([{id:uid(),time:new Date().toISOString(),amount:a,method,by:local.device||''}]);
+  touch(o);save();
+  $('collectModal').classList.add('hide');
+  if($('t-hist').classList.contains('on'))renderHist();
+  const nl=debtLeft(o);
+  showReceipt(o,nl?'Đã thu '+money(a):'Đã thu hết nợ',esc(o.customer||'')+' · còn nợ '+money(nl));
+}
+$('colCash').onclick=()=>collect('cash');
+$('colBank').onclick=()=>collect('bank');
+$('colBack').onclick=()=>$('collectModal').classList.add('hide');
 
 /* ================= HÓA ĐƠN ================= */
 let rcptOrder=null,rcptBlob=null;
@@ -614,6 +797,14 @@ function drawReceipt(o){
   if(o.vat)LR('VAT ('+o.vatPct+'%)',fmtNum(o.vat),F);
   LR('TỔNG CỘNG',money(o.total),F+6,true);
   LR('Thanh toán',methodName(o.method),F-2);
+  if(o.method==='cash'&&o.cashGiven){LR('Tiền nhận',fmtNum(o.cashGiven),F);LR('Tiền thanh toán',fmtNum(o.total),F);LR('Tiền thừa',fmtNum(o.cashGiven-o.total),F,true);}
+  if(o.method==='debt'){
+    if(o.customer)T('Khách hàng: '+o.customer,F-2);
+    LR('Thanh toán trước',fmtNum(o.prepaid||0),F);
+    (o.payments||[]).forEach(p=>LR('Trả nợ '+new Date(p.time).toLocaleDateString('vi-VN',{day:'2-digit',month:'2-digit'}),fmtNum(p.amount),F));
+    const left=debtLeft(o);
+    if(left)LR('CÒN NỢ',money(left),F+2,true);else T('Đã trả hết nợ',F,true);
+  }
   HR();
   C(sh.foot||'Cảm ơn quý khách!',F,true);
   SP(10);
@@ -657,13 +848,21 @@ function receiptHtml(o){
   if(o.discAmt)h+=r('Giảm giá','-'+fmtNum(o.discAmt));
   if(o.vat)h+=r('VAT ('+o.vatPct+'%)',fmtNum(o.vat));
   h+=r('TỔNG CỘNG',money(o.total),'font-weight:bold;font-size:12pt')+r('Thanh toán',methodName(o.method));
+  if(o.method==='cash'&&o.cashGiven)h+=r('Tiền nhận',fmtNum(o.cashGiven))+r('Tiền thanh toán',fmtNum(o.total))+r('Tiền thừa',fmtNum(o.cashGiven-o.total),'font-weight:bold');
+  if(o.method==='debt'){
+    if(o.customer)h+=`<div>Khách hàng: ${esc(o.customer)}</div>`;
+    h+=r('Thanh toán trước',fmtNum(o.prepaid||0));
+    (o.payments||[]).forEach(p=>{h+=r('Trả nợ '+new Date(p.time).toLocaleDateString('vi-VN',{day:'2-digit',month:'2-digit'}),fmtNum(p.amount));});
+    const left=debtLeft(o);
+    h+=left?r('CÒN NỢ',money(left),'font-weight:bold'):'<div style="font-weight:bold">Đã trả hết nợ</div>';
+  }
   h+=`<hr style="border:0;border-top:1px dashed #000"><div style="text-align:center;font-weight:bold">${esc(sh.foot||'Cảm ơn quý khách!')}</div></div>`;
   return h;
 }
 function showReceipt(o,title,sub){
   rcptOrder=o;rcptBlob=null;
   $('rcptTitle').textContent=title||('Hóa đơn '+(o.code||''));
-  $('rcptSub').textContent=sub||(money(o.total)+' · '+methodName(o.method));
+  $('rcptSub').innerHTML=sub||(money(o.total)+' · '+methodName(o.method)+(debtLeft(o)?' · còn nợ '+money(debtLeft(o)):''));
   const c=drawReceipt(o);
   $('rcptImg').src=c.toDataURL('image/png');
   c.toBlob(b=>{rcptBlob=b;},'image/png');
@@ -1105,17 +1304,30 @@ function renderHist(){
   $('hday').textContent=periodLabel(histISO,histMode);
   const [rs,re]=rangeOf(histISO,histMode);
   const orders=ords().filter(o=>{const t=new Date(o.time);return t>=rs&&t<re;}).sort((a,b)=>b.time.localeCompare(a.time));
-  const sumBy=mt=>orders.filter(o=>o.method===mt).reduce((s,o)=>s+o.total,0);
+  // Tiền thực thu trong kỳ: đơn tiền mặt/CK + tiền trả trước của đơn nợ + tiền thu nợ trong kỳ (kể cả nợ đơn cũ)
+  const flow={cash:0,bank:0};let collected=0;
+  orders.forEach(o=>{
+    if(o.method==='cash'||o.method==='bank')flow[o.method]+=+o.total||0;
+    else if(o.method==='debt'&&o.prepaid)flow[o.prepaidMethod==='bank'?'bank':'cash']+=+o.prepaid;
+  });
+  ords().forEach(o=>(o.payments||[]).forEach(p=>{const t=new Date(p.time);if(t>=rs&&t<re){flow[p.method==='bank'?'bank':'cash']+=+p.amount||0;collected+=+p.amount||0;}}));
+  const debtIn=orders.reduce((s,o)=>s+debtLeft(o),0);
   const rev=orders.reduce((s,o)=>s+o.total,0);
   let cost=0,profit=0,missing=0;orders.forEach(o=>{const p=orderProfit(o);cost+=p.cost;profit+=p.profit;missing+=p.missing;});
   $('hcount').textContent=orders.length;
-  $('hcash').textContent=money(sumBy('cash'));
-  $('hbank').textContent=money(sumBy('bank'));
+  $('hcash').textContent=money(flow.cash);
+  $('hbank').textContent=money(flow.bank);
+  $('hdebt').textContent=money(debtIn);$('hdebt').className=debtIn?'warn':'';
   $('hrev').textContent=money(rev);
   $('hcost').textContent=money(cost);
   $('hprofit').textContent=money(profit);
   $('hprofit').className=profit<0?'warn':'';
-  $('hnote').textContent=missing?('Có '+missing+' món chưa nhập giá vốn nên chưa tính vào lãi. Lãi gộp = tiền hàng sau giảm giá − giá vốn (không tính VAT).'):(orders.length?'Lãi gộp = tiền hàng sau giảm giá − giá vốn (không tính VAT).':'');
+  const notes=[];
+  if(collected)notes.push('Tiền mặt/chuyển khoản đã gồm '+money(collected)+' thu nợ trong kỳ.');
+  if(debtIn)notes.push('Còn nợ = phần chưa thu của các đơn trong kỳ.');
+  if(missing)notes.push('Có '+missing+' món chưa nhập giá vốn nên chưa tính vào lãi.');
+  if(orders.length)notes.push('Lãi gộp = tiền hàng sau giảm giá − giá vốn (không tính VAT).');
+  $('hnote').textContent=notes.join(' ');
   // Biểu đồ
   let labels=[],vals=[],title='';
   if(histMode==='day'){for(let h=0;h<24;h++){labels.push(h+'h');vals.push(0);}orders.forEach(o=>{vals[new Date(o.time).getHours()]+=o.total;});title='Doanh thu theo giờ (nghìn đ)';}
@@ -1123,6 +1335,7 @@ function renderHist(){
   else{const days=Math.round((re-rs)/864e5);for(let i=0;i<days;i++){const d=new Date(rs.getFullYear(),rs.getMonth(),rs.getDate()+i);labels.push(histMode==='week'?(d.getDate()+'/'+(d.getMonth()+1)):String(d.getDate()));vals.push(0);}
     orders.forEach(o=>{const t=new Date(o.time);const i=Math.round((new Date(t.getFullYear(),t.getMonth(),t.getDate())-rs)/864e5);if(vals[i]!=null)vals[i]+=o.total;});title='Doanh thu theo ngày (nghìn đ)';}
   $('chartTitle').textContent=title;
+  renderDebts();
   $('chart').innerHTML=orders.length?lineChart(labels,vals,1000):'<p class="muted">Chưa có đơn trong kỳ này.</p>';
   // Bán chạy
   const agg={};
@@ -1136,17 +1349,54 @@ function renderHist(){
     <div class="line" style="border:0"><b>${new Date(o.time).toLocaleString('vi-VN',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit',year:'numeric'})}</b><b>${money(o.total)}</b></div>
     ${o.code||o.info?`<div style="font-size:14px">${o.code?esc(o.code):''}${o.info&&o.info!==o.code?' · '+esc(o.info):''}</div>`:''}
     <div class="muted">${(o.items||[]).map(i=>esc(i.name)+' x'+i.qty).join(', ')}</div>
-    <div class="muted">Hình thức: ${methodName(o.method)}${o.discAmt?' · Giảm '+money(o.discAmt):''}${o.vat?' · VAT '+money(o.vat):''}${o.by?' · '+esc(o.by):''}${o.edited?' · đã sửa':''}</div>
-    <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:6px"><button class="sm" data-r="${o.id}">Hóa đơn</button><button class="sm" data-ed="${o.id}">Sửa</button><button class="sm danger" data-del="${o.id}">Xóa</button></div>
+    <div class="muted">Hình thức: ${methodName(o.method)}${o.method==='debt'?(debtLeft(o)?' · <span class="warn">còn nợ '+money(debtLeft(o))+'</span>':' · đã trả hết'):''}${o.method==='debt'&&o.customer?' · '+esc(o.customer):''}${o.discAmt?' · Giảm '+money(o.discAmt):''}${o.vat?' · VAT '+money(o.vat):''}${o.by?' · '+esc(o.by):''}${o.edited?' · đã sửa':''}</div>
+    <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:6px">${debtLeft(o)?`<button class="sm green" style="width:auto" data-dc="${o.id}">Thu nợ</button>`:''}<button class="sm" data-r="${o.id}">Hóa đơn</button><button class="sm" data-ed="${o.id}">Sửa</button><button class="sm danger" data-del="${o.id}">Xóa</button></div>
   </div>`).join('');
 }
 $('hlist').onclick=e=>{
   const d=e.target.dataset;
   if(d.r){const o=db.orders.find(x=>x.id===d.r);if(o)showReceipt(o);}
   if(d.ed)editOrder(d.ed);
+  if(d.dc)openCollect(d.dc);
   if(d.del&&confirm('Xóa đơn này khỏi lịch sử? Doanh thu sẽ giảm và tồn kho được cộng lại.')){
     const o=db.orders.find(x=>x.id===d.del);if(o){o.deleted=true;touch(o);save();renderHist();renderPick();}
   }
+};
+
+/* ================= LƯU NỢ ================= */
+let debtShow=5;
+function renderDebts(){
+  const days=Math.max(1,+local.debtDays||7);
+  if(document.activeElement!==$('debtDays'))$('debtDays').value=days;
+  const now=Date.now();
+  const list=ords().filter(o=>debtLeft(o)>0).map(o=>({o,left:debtLeft(o),age:Math.floor((now-new Date(o.time))/864e5)}));
+  const total=list.reduce((s,x)=>s+x.left,0);
+  const over=list.filter(x=>x.age>days).length;
+  $('debtTotalAll').textContent=money(total);
+  $('debtSummary').innerHTML=list.length?`${list.length} đơn đang nợ`+(over?` · <span class="warn">${over} đơn nợ quá ${days} ngày</span>`:''):'Không có khoản nợ nào.';
+  const open=!!local.debtOpen;
+  $('debtListBox').style.display=open?'':'none';
+  $('debtToggle').textContent=open?'Ẩn danh sách':'Hiện danh sách';
+  const sort=$('debtSort').value;
+  const cmp={old:(a,b)=>a.o.time.localeCompare(b.o.time),most:(a,b)=>b.left-a.left,least:(a,b)=>a.left-b.left,new:(a,b)=>b.o.time.localeCompare(a.o.time)}[sort];
+  list.sort(cmp);
+  $('debtList').innerHTML=list.length?list.slice(0,debtShow).map(x=>{
+    const o=x.o,late=x.age>days;
+    return `<div class="line"><div style="flex:1;min-width:0"><b class="${late?'warn':''}">${esc(o.customer||o.info||o.code||'Khách')}</b>${late?' <span class="badge">quá '+days+' ngày</span>':''}
+      <div class="muted">${esc(o.code||'')} · ${fmtD(o.time)} · ${x.age} ngày</div></div>
+      <div style="text-align:right;flex:none"><b class="warn">${money(x.left)}</b>
+      <div style="display:flex;gap:4px;margin-top:4px;justify-content:flex-end"><button class="sm" data-dr="${o.id}">Hóa đơn</button><button class="sm green" style="width:auto" data-dc="${o.id}">Thu nợ</button></div></div></div>`;
+  }).join('')+(list.length>debtShow?`<button class="sm" data-dmore="1" style="width:100%;margin-top:8px">Xem thêm (còn ${list.length-debtShow} đơn)</button>`:'')
+  :'<p class="muted" style="margin:8px 0 0">Không có khoản nợ nào.</p>';
+}
+$('debtToggle').onclick=()=>{local.debtOpen=!local.debtOpen;saveLocal();renderDebts();};
+$('debtSort').onchange=()=>{debtShow=5;renderDebts();};
+$('debtDays').addEventListener('input',()=>{const d=$('debtDays').value.replace(/\D/g,'');$('debtDays').value=d;if(+d>0){local.debtDays=+d;saveLocal();renderDebts();}});
+$('debtList').onclick=e=>{
+  const t=e.target.closest('button');if(!t)return;const d=t.dataset;
+  if(d.dc)openCollect(d.dc);
+  if(d.dr){const o=db.orders.find(x=>x.id===d.dr);if(o)showReceipt(o);}
+  if(d.dmore){debtShow+=5;renderDebts();}
 };
 
 /* ================= CÀI ĐẶT ================= */
