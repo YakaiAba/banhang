@@ -23,6 +23,15 @@ table.tb.gt td,table.tb.gt th{text-align:center}
 table.tb.gt td:first-child,table.tb.gt th:first-child{text-align:left}
 table.gt tr.sel td{background:#e8eefb}
 .glink{border:0;background:none;padding:2px 0;color:#1d4ed8;text-decoration:underline;font-size:15px;text-align:left}
+.fcard{margin-bottom:14px}
+.fcard>h3.fh{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:-12px -12px 0;padding:13px 12px;background:#eaf0fb;color:#12306B;border-left:5px solid #12306B;border-radius:12px 12px 0 0;font-size:16px;cursor:pointer;-webkit-user-select:none;user-select:none}
+.fcard>h3.fh.warn{background:#fdecec;color:#c62828;border-left-color:#c62828}
+.fcard>h3.fh::after{content:'';flex:none;width:9px;height:9px;border-right:2.5px solid currentColor;border-bottom:2.5px solid currentColor;transform:rotate(45deg);margin:-4px 4px 0 0;transition:transform .15s}
+.fcard.shut{padding:0}
+.fcard.shut>h3.fh{border-radius:12px;margin:0}
+.fcard.shut>h3.fh::after{transform:rotate(-45deg);margin:0 4px 0 0}
+.fcard>.cbody{padding-top:12px}
+.fcard.shut>.cbody{display:none}
 .pv{position:fixed;inset:0;z-index:15;background:#f4f4f6;display:flex;flex-direction:column}
 .pv.hide{display:none}
 .pvh{background:#12306B;color:#fff;padding:14px 16px;padding-top:calc(14px + env(safe-area-inset-top));font-size:18px;font-weight:700;flex:none}
@@ -103,15 +112,15 @@ table.tb th:first-child,table.tb td:first-child{text-align:left}
 <main>
  <!-- ===== BÁN HÀNG ===== -->
  <section class="tab on" id="t-sell">
-  <div class="row"><input id="search" placeholder="Tìm sản phẩm (gõ không dấu cũng được)"><button id="scanSell" class="scanbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M4 12h16"/></svg>Quét</button></div>
-  <div class="grid" id="pick"></div>
   <h2>Đơn hiện tại</h2>
   <div class="banner hide" id="editBanner"><span id="editText"></span><button class="sm danger" id="editCancel">Hủy sửa</button></div>
   <div class="card">
    <label>Thông tin (mã đơn, tên khách)</label>
    <input id="orderInfo" placeholder="Ví dụ: DH001 - Tên khách hàng">
   </div>
+  <div class="row"><input id="search" placeholder="Tìm sản phẩm (gõ không dấu cũng được)"><button id="scanSell" class="scanbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M4 12h16"/></svg>Quét</button></div>
   <div class="card" id="cart"></div>
+  <div class="grid" id="pick"></div>
   <div class="card" id="extraBox">
    <b style="font-size:14px">Thêm sản phẩm</b>
    <div id="extraRows" style="margin-top:8px"></div>
@@ -139,6 +148,7 @@ table.tb th:first-child,table.tb td:first-child{text-align:left}
    <div id="lowList"></div>
   </div>
   <div class="card">
+   <h3>Thêm sản phẩm</h3>
    <div class="field"><label>Tên sản phẩm</label><input id="pname"></div>
    <div class="row" style="margin:0">
     <div style="flex:1"><label>Giá bán (đ)</label><input id="pprice" type="text" inputmode="numeric" placeholder="169.000"></div>
@@ -158,22 +168,17 @@ table.tb th:first-child,table.tb td:first-child{text-align:left}
   <div class="card">
    <h3>Sản phẩm mới thêm</h3>
    <div id="nlist"></div>
+   <input id="psearch" placeholder="Tìm sản phẩm: tên hoặc mã vạch" style="margin-top:10px">
+   <div id="plist"></div>
   </div>
   <div class="card">
    <h3>Thêm nhóm sản phẩm</h3>
    <div class="row" style="margin:0"><input id="gname" maxlength="40" placeholder="Tên nhóm, ví dụ: Truyện"><button id="gsave" class="green" style="width:auto;flex:none;white-space:nowrap">Thêm nhóm</button></div>
    <button id="gcancel" class="sm" style="display:none;margin-top:6px">Hủy sửa</button>
    <div id="glist" style="margin-top:10px"></div>
-   
-  </div>
-  <div class="card">
-   <h3>Tìm kiếm</h3>
-   <label>Tìm kiếm nhóm</label>
-   <input id="gsearch" placeholder="Gõ tên nhóm (không dấu cũng được)">
+   <input id="gsearch" placeholder="Tìm nhóm (không dấu cũng được)" style="margin-top:10px">
    <div id="gsres"></div>
-   <label style="margin-top:14px">Tìm kiếm sản phẩm</label>
-   <input id="psearch" placeholder="Gõ tên sản phẩm hoặc mã vạch">
-   <div id="plist"></div>
+   
   </div>
  </section>
 
@@ -430,7 +435,7 @@ table.tb th:first-child,table.tb td:first-child{text-align:left}
 <div id="printArea"></div>
 
 <script>
-const APP_VER='3.0 (30/10/2026)';
+const APP_VER='3.1 (30/10/2026)';
 const KEY='banhang.v1', LOCAL='banhang.local', SYNC='banhang.sync';
 const LISTS=['products','orders','stockIns','groups','logs'];
 const $=id=>document.getElementById(id);
@@ -1166,7 +1171,7 @@ async function prodClick(e){
     $('pstock').value=st===null?'':(st<0?'-'+fmtNum(-st):fmtNum(st));
     $('pbar').value=p.barcode||'';
     fillGroupSel(validGroup(p.group));
-    window.scrollTo(0,0);
+    openFold($('pname'));window.scrollTo(0,0);
   }
   if(d.x){
     const p=findP(d.x);
@@ -1273,7 +1278,7 @@ async function groupClick(e){
   else if(d.gsp){gsPage=+d.gsp;renderGroups();}
   else if(d.ge){
     const g=db.groups.find(x=>x.id===d.ge);if(!g)return;
-    gEditId=g.id;$('gname').value=g.name;$('gsave').textContent='Lưu tên';$('gcancel').style.display='';
+    openFold($('gname'));gEditId=g.id;$('gname').value=g.name;$('gsave').textContent='Lưu tên';$('gcancel').style.display='';
     $('gname').scrollIntoView({behavior:'smooth',block:'center'});$('gname').focus();
   }
   else if(d.gx){
@@ -2153,6 +2158,33 @@ function renderAll(fromSync){
   renderPage();
   if(cart.length)renderCart();
 }
+/* ================= THẺ THU GỌN ================= */
+// Tab Sản phẩm, Báo cáo, Cài đặt: mỗi danh mục là một thẻ có thanh tiêu đề; bấm tiêu đề để mở/đóng, máy nhớ trạng thái.
+const FOLD_DEF={'t-prod':[1,1,1,0],'t-hist':[1,1,0],'t-set':[1,0,0,0,0,0,0]}; // 1 = mở sẵn (theo thứ tự thẻ có tiêu đề)
+function initFold(){
+  local.fold=local.fold||{};
+  Object.keys(FOLD_DEF).forEach(sec=>{
+    let n=0;
+    [...$(sec).children].forEach(c=>{
+      const h=c.classList.contains('card')?c.querySelector(':scope > h3'):null;
+      if(!h)return;
+      const key=sec+':'+n,def=FOLD_DEF[sec][n];n++;
+      c.dataset.fold=key;c.classList.add('fcard');h.classList.add('fh');
+      const body=document.createElement('div');body.className='cbody';
+      while(h.nextSibling)body.appendChild(h.nextSibling);
+      c.appendChild(body);
+      const open=key in local.fold?!!local.fold[key]:!!def;
+      c.classList.toggle('shut',!open);
+    });
+  });
+}
+function openFold(el){const c=el&&el.closest?el.closest('.fcard'):null;if(c&&c.classList.contains('shut')){c.classList.remove('shut');local.fold[c.dataset.fold]=1;saveLocal();}}
+document.addEventListener('click',e=>{
+  const h=e.target.closest('h3.fh');if(!h)return;
+  const c=h.parentNode;c.classList.toggle('shut');
+  local.fold[c.dataset.fold]=c.classList.contains('shut')?0:1;saveLocal();
+});
+initFold();
 renderAll();renderCart();resetExtra();
 if(cfg.url){
   if(cfg.cursor==null&&!cfg.v2){markAllLocal();}
