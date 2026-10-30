@@ -24,6 +24,7 @@ table.tb.gt td:first-child,table.tb.gt th:first-child{text-align:left}
 table.gt tr.sel td{background:#e8eefb}
 .glink{border:0;background:none;padding:2px 0;color:#1d4ed8;text-decoration:underline;font-size:15px;text-align:left}
 .fcard{margin-bottom:14px}
+#hlist .card{box-shadow:none;border:1px solid #e3e6ee;margin-bottom:8px}
 .fcard>h3.fh{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:-12px -12px 0;padding:13px 12px;background:#eaf0fb;color:#12306B;border-left:5px solid #12306B;border-radius:12px 12px 0 0;font-size:16px;cursor:pointer;-webkit-user-select:none;user-select:none}
 .fcard>h3.fh.warn{background:#fdecec;color:#c62828;border-left-color:#c62828}
 .fcard>h3.fh::after{content:'';flex:none;width:9px;height:9px;border-right:2.5px solid currentColor;border-bottom:2.5px solid currentColor;transform:rotate(45deg);margin:-4px 4px 0 0;transition:transform .15s}
@@ -219,25 +220,23 @@ table.tb th:first-child,table.tb td:first-child{text-align:left}
    </div>
   </div>
   <div class="card"><h3>Bán chạy nhất trong kỳ</h3><div id="topList"></div></div>
-  <h2>Danh sách đơn</h2>
-  <div id="hlist"></div>
+  <div class="card" id="ordCardBox">
+   <h3>Danh sách đơn</h3>
+   <div id="hlist"></div>
+  </div>
  </section>
 
  <!-- ===== CÀI ĐẶT ===== -->
  <section class="tab" id="t-set">
   <div class="card">
-   <h3>Máy này</h3>
+   <h3>Thiết lập sử dụng</h3>
    <label>Tên máy / người bán (dùng trong mã đơn)</label>
    <input id="devName" placeholder="Ví dụ: iPhone, iPad, Phú" maxlength="20">
    <p class="muted" id="devHint" style="margin:6px 0 0"></p>
-   <label>Khổ giấy hóa đơn</label>
-   <select id="paper"><option value="58">58 mm</option><option value="80">80 mm</option></select>
-   <label>Cỡ tem mã vạch</label>
-   <select id="lblSize"><option value="50x30">50 × 30 mm</option><option value="40x30">40 × 30 mm</option><option value="30x20">30 × 20 mm</option></select>
    <button class="primary" id="devSave" style="margin-top:10px">Lưu</button>
   </div>
   <div class="card">
-   <h3>Thiết lập quét</h3>
+   <h3>Thiết lập quét mã</h3>
    <label>Kiểu quét (riêng từng máy)</label>
    <select id="scanType">
     <option value="bar">Chỉ mã vạch (không đọc mã QR)</option>
@@ -245,6 +244,10 @@ table.tb th:first-child,table.tb td:first-child{text-align:left}
     <option value="all">Cả mã vạch và mã QR</option>
    </select>
    <p class="muted" style="margin:6px 0 0">Nếu hay quét nhầm mã QR trên bao bì hoặc tem, để "Chỉ mã vạch".</p>
+   <label>Khổ giấy hóa đơn</label>
+   <select id="paper"><option value="58">58 mm</option><option value="80">80 mm</option></select>
+   <label>Cỡ tem mã vạch</label>
+   <select id="lblSize"><option value="50x30">50 × 30 mm</option><option value="40x30">40 × 30 mm</option><option value="30x20">30 × 20 mm</option></select>
    <button class="primary" id="scanSave" style="margin-top:10px">Lưu</button>
   </div>
   <div class="card">
@@ -435,7 +438,7 @@ table.tb th:first-child,table.tb td:first-child{text-align:left}
 <div id="printArea"></div>
 
 <script>
-const APP_VER='3.1 (30/10/2026)';
+const APP_VER='3.2 (30/10/2026)';
 const KEY='banhang.v1', LOCAL='banhang.local', SYNC='banhang.sync';
 const LISTS=['products','orders','stockIns','groups','logs'];
 const $=id=>document.getElementById(id);
@@ -1935,16 +1938,21 @@ $('devSave').onclick=()=>{
   const n=$('devName').value.trim();
   const t=tagOf(n);
   if(n&&!t)return alert('Tên máy cần có ít nhất 1 chữ hoặc số');
-  const oldDev=local.device||'',oldPaper=local.paper==='80'?'80':'58',oldLbl=lblKey();
-  local.device=n.slice(0,20);local.paper=$('paper').value;local.label=$('lblSize').value;saveLocal();
+  const oldDev=local.device||'';
+  local.device=n.slice(0,20);saveLocal();
   if(oldDev!==local.device)logAct('sys','set_device','Đổi tên máy: "'+oldDev+'" → "'+local.device+'"');
-  if(oldPaper!==local.paper)logAct('sys','set_paper','Đổi khổ giấy hóa đơn: '+oldPaper+' → '+local.paper+' mm');
-  if(oldLbl!==local.label)logAct('sys','set_label','Đổi cỡ tem: '+oldLbl.replace('x',' × ')+' → '+local.label.replace('x',' × ')+' mm');
   save();
   updateHint();loadSettings();renderTitle();alert('Đã lưu');
 };
 const SCANNAME={bar:'Chỉ mã vạch',qr:'Chỉ mã QR',all:'Mã vạch và mã QR'};
-$('scanSave').onclick=()=>{const old=scanKey();local.scan=$('scanType').value;saveLocal();if(old!==scanKey()){logAct('sys','set_scan','Đổi kiểu quét: '+SCANNAME[old]+' → '+SCANNAME[scanKey()]);save();}alert('Đã lưu kiểu quét');};
+$('scanSave').onclick=()=>{
+  const old=scanKey(),oldPaper=local.paper==='80'?'80':'58',oldLbl=lblKey();
+  local.scan=$('scanType').value;local.paper=$('paper').value;local.label=$('lblSize').value;saveLocal();
+  if(old!==scanKey())logAct('sys','set_scan','Đổi kiểu quét: '+SCANNAME[old]+' → '+SCANNAME[scanKey()]);
+  if(oldPaper!==local.paper)logAct('sys','set_paper','Đổi khổ giấy hóa đơn: '+oldPaper+' → '+local.paper+' mm');
+  if(oldLbl!==local.label)logAct('sys','set_label','Đổi cỡ tem: '+oldLbl.replace('x',' × ')+' → '+local.label.replace('x',' × ')+' mm');
+  save();updateHint();loadSettings();alert('Đã lưu');
+};
 $('shopSave').onclick=()=>{
   db.shop=touch({name:$('shopName').value.trim(),addr:$('shopAddr').value.trim(),phone:$('shopPhone').value.trim(),foot:$('shopFoot').value.trim(),updated:(db.shop||{}).updated});
   logAct('sys','set_shop','Cập nhật thông tin cửa hàng');save();renderTitle();alert('Đã lưu thông tin cửa hàng');
@@ -2160,7 +2168,7 @@ function renderAll(fromSync){
 }
 /* ================= THẺ THU GỌN ================= */
 // Tab Sản phẩm, Báo cáo, Cài đặt: mỗi danh mục là một thẻ có thanh tiêu đề; bấm tiêu đề để mở/đóng, máy nhớ trạng thái.
-const FOLD_DEF={'t-prod':[1,1,1,0],'t-hist':[1,1,0],'t-set':[1,0,0,0,0,0,0]}; // 1 = mở sẵn (theo thứ tự thẻ có tiêu đề)
+const FOLD_DEF={'t-prod':[0,1,0,0],'t-hist':[0,0,0,0],'t-set':[1,0,0,0,0,0,0]}; // 1 = mở sẵn (theo thứ tự thẻ có tiêu đề)
 function initFold(){
   local.fold=local.fold||{};
   Object.keys(FOLD_DEF).forEach(sec=>{
