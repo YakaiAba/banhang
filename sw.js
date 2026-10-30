@@ -1,7 +1,7 @@
 // Giúp app Bán hàng mở được và quét mã được cả khi mất mạng.
 // Trang app: lấy bản mới từ mạng trước, mất mạng thì dùng bản đã lưu.
 // Bộ đọc mã (jsdelivr, unpkg): dùng bản đã lưu, không có mới tải.
-const CACHE = 'banhang-v2';
+const CACHE = 'banhang-v3';
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(['./', './index.html'])).catch(() => {}));

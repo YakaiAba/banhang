@@ -5,27 +5,29 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Bán hàng">
-<meta name="theme-color" content="#f26a1b">
+<meta name="theme-color" content="#12306B">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" href="icon-180.png">
 <title>Bán hàng</title>
 <style>
 *{box-sizing:border-box}
 body{margin:0;font-family:-apple-system,system-ui,sans-serif;background:#f4f4f6;color:#222;padding-bottom:calc(70px + env(safe-area-inset-bottom))}
-header{background:#f26a1b;color:#fff;padding:14px 16px;font-size:18px;font-weight:600;position:sticky;top:0;z-index:5;display:flex;justify-content:space-between;align-items:center;gap:8px}
+header{background:#12306B;color:#fff;padding:14px 16px;font-size:18px;font-weight:600;position:sticky;top:0;z-index:5;display:flex;justify-content:space-between;align-items:center;gap:8px}
 .syncdot{font-size:12px;font-weight:500;background:rgba(255,255,255,.2);padding:3px 8px;border-radius:10px;white-space:nowrap}
 .syncdot:empty{display:none}
 #appTitle{min-width:0;overflow:hidden;font-size:17px;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .devname{font-weight:500;font-size:15px;white-space:nowrap}
 .pager{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:8px}
-.pager button.on{background:#f26a1b;color:#fff;border-color:#f26a1b}
+.pager button.on{background:#12306B;color:#fff;border-color:#12306B}
 table.tb.gt td,table.tb.gt th{text-align:center}
 table.tb.gt td:first-child,table.tb.gt th:first-child{text-align:left}
-table.gt tr.sel td{background:#fff3e0}
-.glink{border:0;background:none;padding:2px 0;color:#d35400;text-decoration:underline;font-size:15px;text-align:left}
+table.gt tr.sel td{background:#e8eefb}
+.glink{border:0;background:none;padding:2px 0;color:#1d4ed8;text-decoration:underline;font-size:15px;text-align:left}
 .gpanel{margin-top:10px;background:#fafafa;border:1px solid #eee;border-radius:10px;padding:8px 10px}
 /* thanh toán */
-.opt{width:100%;background:#fff;border:2px solid #f26a1b;color:#f26a1b;font-weight:600;margin-top:8px}
-.opt.on{background:#fff3e0}
-.paybox{border:1px solid #f0d0b8;border-radius:10px;padding:8px 10px;margin:8px 0 0;text-align:left;background:#fffaf5}
+.opt{width:100%;background:#fff;border:2px solid #12306B;color:#12306B;font-weight:600;margin-top:8px}
+.opt.on{background:#e8eefb}
+.paybox{border:1px solid #c9d6f0;border-radius:10px;padding:8px 10px;margin:8px 0 0;text-align:left;background:#f4f7fd}
 .paybox.hide{display:none}
 .prow{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 0}
 .prow input,.prow select{width:58%;text-align:right}
@@ -41,13 +43,14 @@ main{padding:12px;max-width:900px;margin:0 auto}
 .tab{display:none}.tab.on{display:block}
 nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:#fff;border-top:1px solid #ddd;padding-bottom:env(safe-area-inset-bottom);z-index:6}
 nav button{flex:1;padding:12px 2px;border:0;background:none;font-size:14px;color:#666;border-radius:0}
-nav button.on{color:#f26a1b;font-weight:600}
+nav button.on{color:#12306B;font-weight:600}
 .card{background:#fff;border-radius:12px;padding:12px;margin-bottom:10px;box-shadow:0 1px 2px rgba(0,0,0,.06)}
 input,select{font-size:16px;padding:10px;border:1px solid #ccc;border-radius:8px;width:100%;background:#fff;color:#222}
 button{font-size:15px;padding:10px 14px;border-radius:8px;border:1px solid #ccc;background:#fff;color:#222}
-button.primary{background:#f26a1b;color:#fff;border-color:#f26a1b;width:100%}
+button.primary{background:#12306B;color:#fff;border-color:#12306B;width:100%}
 button.green{background:#2e7d32;color:#fff;border-color:#2e7d32;width:100%}
 button.danger{color:#c62828;border-color:#e0a0a0}
+.scanbtn{flex:none;display:inline-flex;align-items:center;gap:6px;background:#12306B;color:#fff;border:0;border-radius:10px;padding:10px 16px;font-weight:600;font-size:15px;white-space:nowrap;box-shadow:0 2px 0 #0a1d44}.scanbtn:active{transform:translateY(2px);box-shadow:none;background:#0d2552}.scanbtn svg{width:20px;height:20px;flex:none}
 button.sm{padding:6px 10px;font-size:14px}
 .row{display:flex;gap:8px;align-items:center;margin-bottom:10px}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
@@ -57,7 +60,7 @@ button.sm{padding:6px 10px;font-size:14px}
 .good{color:#2e7d32}
 .line{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #eee;gap:6px}
 .sum{display:flex;justify-content:space-between;padding:4px 0}
-.total{font-size:18px;font-weight:700;color:#f26a1b;border-top:1px solid #ddd;margin-top:6px;padding-top:8px}
+.total{font-size:18px;font-weight:700;color:#12306B;border-top:1px solid #ddd;margin-top:6px;padding-top:8px}
 .qty{display:flex;align-items:center;gap:4px}
 .qty button{padding:4px 10px}
 .qin{width:52px;text-align:center;padding:6px 4px}
@@ -66,14 +69,14 @@ button.sm{padding:6px 10px;font-size:14px}
 .overlay.hide{display:none}
 .camwrap{position:relative;width:100%;max-width:480px}
 video{width:100%;max-height:60vh;background:#000;display:block;object-fit:cover}
-.aim{position:absolute;left:10%;right:10%;top:30%;bottom:30%;border:3px solid #f26a1b;border-radius:10px;box-shadow:0 0 0 2000px rgba(0,0,0,.35);pointer-events:none}
-.aim.ok{border-color:#2e7d32}
+.aim{position:absolute;left:10%;right:10%;top:30%;bottom:30%;border:3px solid #fff;border-radius:10px;box-shadow:0 0 0 2000px rgba(0,0,0,.35);pointer-events:none}
+.aim.ok{border-color:#2EE6A6}
 label{display:block;font-size:14px;margin:8px 0 4px}
 .field{margin-bottom:8px}
 h2{font-size:16px;margin:14px 0 8px}
 h3{font-size:15px;margin:0 0 8px}
-.seg{display:flex;gap:6px}.seg button{flex:1;padding:8px 2px;font-size:14px}.seg button.on{background:#f26a1b;color:#fff;border-color:#f26a1b}
-.banner{background:#fff3e0;border:1px solid #f26a1b;border-radius:10px;padding:8px 10px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:14px}
+.seg{display:flex;gap:6px}.seg button{flex:1;padding:8px 2px;font-size:14px}.seg button.on{background:#12306B;color:#fff;border-color:#12306B}
+.banner{background:#e8eefb;border:1px solid #12306B;border-radius:10px;padding:8px 10px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:14px}
 .banner.hide{display:none}
 table.tb{width:100%;border-collapse:collapse;font-size:14px}
 table.tb th,table.tb td{padding:6px 4px;border-bottom:1px solid #eee;text-align:right}
@@ -95,7 +98,7 @@ table.tb th:first-child,table.tb td:first-child{text-align:left}
 <main>
  <!-- ===== BÁN HÀNG ===== -->
  <section class="tab on" id="t-sell">
-  <div class="row"><input id="search" placeholder="Tìm sản phẩm (gõ không dấu cũng được)"><button id="scanSell">Quét</button></div>
+  <div class="row"><input id="search" placeholder="Tìm sản phẩm (gõ không dấu cũng được)"><button id="scanSell" class="scanbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M4 12h16"/></svg>Quét</button></div>
   <div class="grid" id="pick"></div>
   <h2>Đơn hiện tại</h2>
   <div class="banner hide" id="editBanner"><span id="editText"></span><button class="sm danger" id="editCancel">Hủy sửa</button></div>
@@ -138,7 +141,7 @@ table.tb th:first-child,table.tb td:first-child{text-align:left}
    </div>
    <div class="field"><label>Tồn kho hiện tại</label><input id="pstock" type="text" inputmode="numeric" placeholder="Để trống nếu không theo dõi"></div>
    <div class="field"><label>Mã vạch</label>
-    <div class="row" style="margin:0"><input id="pbar" inputmode="numeric"><button id="scanProd">Quét</button></div>
+    <div class="row" style="margin:0"><input id="pbar" inputmode="numeric"><button id="scanProd" class="scanbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M4 12h16"/></svg>Quét</button></div>
    </div>
    <div class="field"><label>Nhóm sản phẩm</label><select id="pgroup"></select></div>
    <input type="hidden" id="pid">
@@ -290,7 +293,7 @@ table.tb th:first-child,table.tb td:first-child{text-align:left}
 <div class="overlay dim hide" id="payModal">
  <div class="card modal">
   <b>Thanh toán</b>
-  <div id="payTotal" style="font-size:22px;color:#f26a1b;font-weight:700;margin:6px 0"></div>
+  <div id="payTotal" style="font-size:22px;color:#12306B;font-weight:700;margin:6px 0"></div>
   <div id="payQRBox">
    <img id="payQR" alt="Mã QR chuyển khoản" style="width:100%;max-width:280px;display:none;margin:0 auto">
    <p id="payErr" style="display:none;color:#c62828;font-size:14px;margin:6px 0"></p>
@@ -365,7 +368,7 @@ table.tb th:first-child,table.tb td:first-child{text-align:left}
 <div id="printArea"></div>
 
 <script>
-const APP_VER='2.4 (30/10/2026)';
+const APP_VER='2.5 (30/10/2026)';
 const KEY='banhang.v1', LOCAL='banhang.local', SYNC='banhang.sync';
 const LISTS=['products','orders','stockIns','groups'];
 const $=id=>document.getElementById(id);
